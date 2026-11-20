@@ -4,7 +4,7 @@ import Foundation
 // Phase E and WhoopStore depend on these EXACT shapes. ts is wall-clock unix seconds
 // EXCEPT inside extractStreams' inputs; the structs themselves always carry wall-clock ts.
 
-public struct HRSample: Equatable, Codable {
+public struct HRSample: Equatable, Codable, Sendable {  // tether: Sendable (plain value type)
     public let ts: Int          // wall-clock unix seconds
     public let bpm: Int
     public init(ts: Int, bpm: Int) { self.ts = ts; self.bpm = bpm }
@@ -85,7 +85,7 @@ public enum RRSourceChannel: Int, Equatable, Codable, Sendable, CaseIterable {
     public var isOura: Bool { (1...4).contains(rawValue) }
 }
 
-public struct RRInterval: Equatable, Codable {
+public struct RRInterval: Equatable, Codable, Sendable {  // tether: Sendable (plain value type)
     public let ts: Int          // wall-clock unix seconds
     public let rrMs: Int
     /// The sensor channel this beat came from, or nil when the source does not distinguish one (WHOOP 4

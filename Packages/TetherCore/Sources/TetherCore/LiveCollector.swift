@@ -16,21 +16,34 @@ public struct SampleBatch: @unchecked Sendable {
 }
 
 /// Writes into NOOP's SQLite store under one fixed device id: Tether only ever has one strap.
+/// The database opens on the first write, so the app can create this without waiting.
 public actor WhoopStoreSink: SampleSink {
     public static let deviceId = "tether-strap"
-    private let store: WhoopStore
-    private var deviceRegistered = false
+    private let path: String
+    private var store: WhoopStore?
 
-    public init(store: WhoopStore) {
-        self.store = store
+    public init(path: String) {
+        self.path = path
+    }
+
+    public func openStore() async throws -> WhoopStore {
+        if let store { return store }
+        let opened = try await WhoopStore(path: path)
+        try await opened.upsertDevice(id: Self.deviceId, mac: nil, name: "WHOOP 5.0")
+        store = opened
+        return opened
     }
 
     public func write(_ batch: SampleBatch) async throws {
-        if !deviceRegistered {
-            try await store.upsertDevice(id: Self.deviceId, mac: nil, name: "WHOOP 5.0")
-            deviceRegistered = true
-        }
-        try await store.insert(batch.streams, deviceId: Self.deviceId)
+        try await openStore().insert(batch.streams, deviceId: Self.deviceId)
+    }
+
+    /// Reads HR and R-R for a time range back out, wrapped so it can leave the actor.
+    public func readBack(from: Int, to: Int, limit: Int = 100_000) async throws -> SampleBatch {
+        let store = try await openStore()
+        let hr = try await store.hrSamples(deviceId: Self.deviceId, from: from, to: to, limit: limit)
+        let rr = try await store.rrIntervals(deviceId: Self.deviceId, from: from, to: to, limit: limit)
+        return SampleBatch(Streams(hr: hr, rr: rr))
     }
 }
 
