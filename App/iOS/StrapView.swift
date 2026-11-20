@@ -163,7 +163,7 @@ private struct ExpiryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.headline).foregroundStyle(status.needsReinstallSoon ? TetherBrand.headsUp : TetherBrand.text)
-            Text("Free Apple account. Once it expires, Tether stops recording until you plug into your Mac and install again from Xcode. Your history stays on the phone.")
+            Text("Free Apple account. Turn on LocalDevVPN, open SideStore and tap Refresh before it runs out. If it lapses, Tether stops recording until you refresh. Your history stays on the phone.")
                 .font(.subheadline).foregroundStyle(TetherBrand.sub)
         }
         .card()

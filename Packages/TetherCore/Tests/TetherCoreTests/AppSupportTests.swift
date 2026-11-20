@@ -82,4 +82,12 @@ struct InstallExpiryTests {
         #expect(!InstallExpiry.Status(expires: expiry, now: expiry.addingTimeInterval(-6 * 86_400)).needsReinstallSoon)
         #expect(InstallExpiry.Status(expires: expiry, now: expiry.addingTimeInterval(60)).isExpired)
     }
+
+    @Test func reminderFiresADayBeforeAndNeverInThePast() throws {
+        let expiry = try #require(ISO8601DateFormatter().date(from: "2026-11-27T18:58:00Z"))
+        let early = InstallExpiry.Status(expires: expiry, now: expiry.addingTimeInterval(-5 * 86_400))
+        #expect(early.reminderDate == expiry.addingTimeInterval(-86_400))
+        let late = InstallExpiry.Status(expires: expiry, now: expiry.addingTimeInterval(-3_600))
+        #expect(late.reminderDate == nil)
+    }
 }

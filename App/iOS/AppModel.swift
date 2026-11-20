@@ -2,12 +2,14 @@ import Foundation
 import Observation
 import TetherCore
 import UIKit
+import UserNotifications
 
 /// Owns the one collector for the app's lifetime and the phone-side state the screens read.
 @MainActor
 @Observable
 final class AppModel {
     private static let onboardedKey = "tether.onboarded"
+    private static let expiryReminderId = "tether.expiry"
 
     let collector: LiveCollector
     private(set) var profile: UserProfile?
@@ -46,6 +48,20 @@ final class AppModel {
         if let strap { collector.pair(with: strap) }
         UserDefaults.standard.set(true, forKey: Self.onboardedKey)
         onboarded = true
+    }
+
+    /// One local notification a day before the signing runs out. Rescheduled on every launch and
+    /// foreground, so a SideStore refresh (new expiry date) moves it automatically.
+    func scheduleExpiryReminder() async {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.expiryReminderId])
+        guard let reminder = installExpiry?.reminderDate else { return }
+        guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Refresh Tether in SideStore"
+        content.body = "The install runs out tomorrow. Turn on LocalDevVPN, open SideStore and tap Refresh, or tonight won't record."
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(60, reminder.timeIntervalSinceNow), repeats: false)
+        try? await center.add(UNNotificationRequest(identifier: Self.expiryReminderId, content: content, trigger: trigger))
     }
 
     func refreshDeviceState() {

@@ -28,6 +28,8 @@ targets:
       path: App/iOS/Info.plist
       properties:
         CFBundleDisplayName: Tether
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UIBackgroundModes: [bluetooth-central]
         NSBluetoothAlwaysUsageDescription: "Tether reads your strap's heart rate over Bluetooth, all night, and keeps it on your phone."
@@ -49,6 +51,8 @@ targets:
       path: App/macOS/Info.plist
       properties:
         CFBundleDisplayName: Tether
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.healthcare-fitness
         NSBluetoothAlwaysUsageDescription: "Tether shows your strap's live heart rate when it's in range. Nothing is saved on this Mac."
     entitlements:

@@ -90,6 +90,7 @@ public struct BaselineProgress: Sendable, Equatable {
 /// A free Apple account signs the app for 7 days. The date is read from the app's own profile.
 public enum InstallExpiry {
     public static let warnDays = 2
+    public static let reminderLead: TimeInterval = 86_400
 
     public struct Status: Sendable, Equatable {
         public let expires: Date
@@ -103,6 +104,12 @@ public enum InstallExpiry {
         public var isExpired: Bool { now >= expires }
         public var daysLeft: Int { max(0, Int(expires.timeIntervalSince(now) / 86_400)) }
         public var needsReinstallSoon: Bool { daysLeft <= InstallExpiry.warnDays }
+
+        /// A day before expiry, so there's time to refresh. Nil once that moment has passed.
+        public var reminderDate: Date? {
+            let date = expires.addingTimeInterval(-InstallExpiry.reminderLead)
+            return date > now ? date : nil
+        }
     }
 
     /// `embedded.mobileprovision` is a signed CMS blob with an XML plist inside.
