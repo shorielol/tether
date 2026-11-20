@@ -1,0 +1,53 @@
+import SwiftUI
+
+struct RootView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Group {
+            if model.onboarded {
+                MainTabs()
+            } else {
+                PairingFlow()
+            }
+        }
+        .background(TetherBrand.ink)
+        .foregroundStyle(TetherBrand.text)
+    }
+}
+
+struct MainTabs: View {
+    enum Section: String { case today, sleep, trends, strap }
+
+    #if DEBUG
+    // Screenshot runs pass `-tether.debugTab strap` to open on a given tab.
+    @State private var selection = Section(rawValue: UserDefaults.standard.string(forKey: "tether.debugTab") ?? "") ?? .today
+    #else
+    @State private var selection = Section.today
+    #endif
+
+    var body: some View {
+        TabView(selection: $selection) {
+            Tab("Today", systemImage: "sun.max", value: .today) { TodayView() }
+            Tab("Sleep", systemImage: "moon", value: .sleep) { SleepView() }
+            Tab("Trends", systemImage: "chart.bar", value: .trends) { TrendsView() }
+            Tab("Strap", systemImage: "heart", value: Section.strap) { StrapView() }
+        }
+    }
+}
+
+/// Shared scroll container so every tab has the same margins and background.
+struct TabScreen<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) { content }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .background(TetherBrand.ink)
+    }
+}

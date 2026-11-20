@@ -2,7 +2,7 @@ import CoreBluetooth
 import Foundation
 
 public enum LinkState: Equatable, Sendable {
-    case bluetoothOff, unauthorized, idle, scanning, connecting, connected, reconnecting
+    case bluetoothOff, unauthorized, unavailable, idle, scanning, connecting, connected, reconnecting
 }
 
 public struct DiscoveredStrap: Identifiable, Equatable, Sendable {
@@ -119,6 +119,7 @@ public final class StandardHRSource: NSObject, HeartDataSource {
         switch state {
         case .poweredOff: .bluetoothOff
         case .unauthorized: .unauthorized
+        case .unsupported: .unavailable
         default: nil
         }
     }
