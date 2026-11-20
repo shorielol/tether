@@ -51,15 +51,15 @@ final class AppModel {
     }
 
     /// One local notification a day before the signing runs out. Rescheduled on every launch and
-    /// foreground, so a SideStore refresh (new expiry date) moves it automatically.
+    /// foreground, so a renewal (new expiry date) moves it automatically.
     func scheduleExpiryReminder() async {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [Self.expiryReminderId])
         guard let reminder = installExpiry?.reminderDate else { return }
         guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Refresh Tether in SideStore"
-        content.body = "The install runs out tomorrow. Turn on LocalDevVPN, open SideStore and tap Refresh, or tonight won't record."
+        content.title = "Tether needs renewing"
+        content.body = "The install runs out tomorrow. Put your iPhone on the same Wi-Fi as your Mac, or plug it in, so the Mac can renew it."
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(60, reminder.timeIntervalSinceNow), repeats: false)
         try? await center.add(UNNotificationRequest(identifier: Self.expiryReminderId, content: content, trigger: trigger))
     }
