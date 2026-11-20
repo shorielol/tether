@@ -1,0 +1,64 @@
+name: Tether
+options:
+  bundleIdPrefix: com.shorielol
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: YR5797KQ57
+    CODE_SIGN_STYLE: Automatic
+packages:
+  TetherCore:
+    path: Packages/TetherCore
+targets:
+  TetherPhone:
+    type: application
+    platform: iOS
+    sources:
+      - App/iOS
+      - App/Shared
+    dependencies:
+      - package: TetherCore
+    info:
+      path: App/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Tether
+        UILaunchScreen: {}
+        UIBackgroundModes: [bluetooth-central]
+        NSBluetoothAlwaysUsageDescription: "Tether reads your strap's heart rate over Bluetooth, all night, and keeps it on your phone."
+        NSSupportsLiveActivities: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shorielol.tether
+        TARGETED_DEVICE_FAMILY: "1"
+  TetherMac:
+    type: application
+    platform: macOS
+    sources:
+      - App/macOS
+      - App/Shared
+    dependencies:
+      - package: TetherCore
+    info:
+      path: App/macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Tether
+        LSApplicationCategoryType: public.app-category.healthcare-fitness
+        NSBluetoothAlwaysUsageDescription: "Tether shows your strap's live heart rate when it's in range. Nothing is saved on this Mac."
+    entitlements:
+      path: App/macOS/TetherMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
+        com.apple.security.files.bookmarks.app-scope: true
+        com.apple.security.device.bluetooth: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shorielol.tether.mac
+        CODE_SIGN_IDENTITY: "-"
