@@ -18,7 +18,9 @@ final class FakeSource: HeartDataSource {
 
 actor FakeSink: SampleSink {
     private(set) var written: [Streams] = []
+    private(set) var erasedFrom: [Int] = []
     func write(_ batch: SampleBatch) async throws { written.append(batch.streams) }
+    func erase(from: Int) async throws { erasedFrom.append(from) }
 }
 
 @MainActor
@@ -105,5 +107,45 @@ struct LiveCollectorTests {
         source.send(.discovered(DiscoveredStrap(id: id, name: "WHOOP 4C0", rssi: -55)))
         #expect(collector.discovered.count == 1)
         #expect(collector.discovered.first?.rssi == -55)
+    }
+
+    @Test func forgettingEndsThePairingAndSurvivesRelaunch() async {
+        let defaults = makeDefaults()
+        let source = FakeSource()
+        let collector = LiveCollector(source: source, sink: FakeSink(), defaults: defaults, now: { 500 })
+        collector.pair(with: UUID())
+        source.send(.measurement(HeartRateMeasurement(bpm: 70, rrMs: [], contact: .detected), at: 501))
+        await collector.forgetStrap(erase: true)
+        #expect(!collector.isPaired)
+        #expect(collector.heartRate == nil)
+        #expect(collector.lastSampleAt == nil)
+        #expect(source.rememberedStrap == nil)
+        let relaunched = LiveCollector(source: FakeSource(), sink: FakeSink(), defaults: defaults, now: { 600 })
+        #expect(!relaunched.isPaired)
+    }
+
+    @Test func eraseRemovesWhatThePairingRecordedAndSavesNothingPending() async {
+        let source = FakeSource()
+        let sink = FakeSink()
+        let collector = LiveCollector(source: source, sink: sink, defaults: makeDefaults(), now: { 500 })
+        collector.pair(with: UUID())
+        source.send(.measurement(HeartRateMeasurement(bpm: 70, rrMs: [850], contact: .detected), at: 501))
+        await collector.forgetStrap(erase: true)
+        source.send(.measurement(HeartRateMeasurement(bpm: 71, rrMs: [], contact: .detected), at: 502))
+        await collector.flush()
+        #expect(await sink.erasedFrom == [500])
+        #expect(await sink.written.isEmpty)
+    }
+
+    @Test func keepSavesUnsavedSamplesBeforeForgetting() async {
+        let source = FakeSource()
+        let sink = FakeSink()
+        let collector = LiveCollector(source: source, sink: sink, defaults: makeDefaults(), now: { 500 })
+        collector.pair(with: UUID())
+        source.send(.measurement(HeartRateMeasurement(bpm: 70, rrMs: [850], contact: .detected), at: 501))
+        await collector.forgetStrap(erase: false)
+        #expect(!collector.isPaired)
+        #expect(await sink.erasedFrom.isEmpty)
+        #expect(await sink.written.flatMap(\.hr).map(\.bpm) == [70])
     }
 }

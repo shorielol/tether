@@ -113,7 +113,7 @@ struct ScanStep: View {
             if model.collector.discovered.isEmpty {
                 Searching().card()
             } else {
-                ForEach(model.collector.discovered) { found in
+                ForEach(DiscoveredStrap.whoopFirst(model.collector.discovered)) { found in
                     Button { choose(found) } label: { StrapRow(strap: found) }
                         .buttonStyle(.plain)
                 }
@@ -147,26 +147,28 @@ private struct StrapRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "heart.fill").foregroundStyle(TetherBrand.ember)
+            Image(systemName: "heart.fill").foregroundStyle(strap.isWhoop ? TetherBrand.ember : TetherBrand.sub)
                 .frame(width: 40, height: 40)
-                .background(TetherBrand.ember.opacity(0.15), in: .circle)
+                .background((strap.isWhoop ? TetherBrand.ember : TetherBrand.sub).opacity(0.15), in: .circle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(strap.name).font(.headline)
                 Text(signal).font(.subheadline).foregroundStyle(TetherBrand.sub)
             }
             Spacer()
-            Text("Use this strap").font(.subheadline.weight(.semibold)).foregroundStyle(TetherBrand.ember)
+            Text("Use this").font(.subheadline.weight(.semibold))
+                .foregroundStyle(strap.isWhoop ? TetherBrand.ember : TetherBrand.sub)
         }
         .card(padding: 14)
         .accessibilityElement(children: .combine)
     }
 
     private var signal: String {
-        switch strap.rssi {
+        let strength = switch strap.rssi {
         case (-60)...: "Strong signal"
         case (-75)...: "Good signal"
         default: "Weak signal · move closer"
         }
+        return strap.isWhoop ? strength : "Not a WHOOP · other heart-rate device"
     }
 }
 

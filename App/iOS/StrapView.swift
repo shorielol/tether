@@ -42,10 +42,23 @@ struct StrapView: View {
             .presentationDetents([.large])
         }
         .confirmationDialog("Forget this strap?", isPresented: $confirmForget, titleVisibility: .visible) {
-            Button("Forget strap", role: .destructive) { model.collector.forgetStrap() }
+            Button("Forget and erase what it recorded", role: .destructive) {
+                Task { await model.collector.forgetStrap(erase: true) }
+            }
+            Button("Forget, keep the data") {
+                Task { await model.collector.forgetStrap(erase: false) }
+            }
         } message: {
-            Text("Tether stops reconnecting to it. Your recorded history stays.")
+            Text(forgetMessage)
         }
+    }
+}
+
+extension StrapView {
+    fileprivate var forgetMessage: String {
+        guard let pairedAt = model.collector.pairedAt else { return "Tether stops reconnecting to it." }
+        let since = Date(timeIntervalSince1970: TimeInterval(pairedAt)).formatted(date: .abbreviated, time: .shortened)
+        return "It has been recording since \(since). Erase that if you picked the wrong device, so your history starts with the right strap."
     }
 }
 

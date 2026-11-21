@@ -6,6 +6,8 @@ import Observation
 /// Where collected samples go. Production writes to NOOP's `WhoopStore`; tests use a fake.
 public protocol SampleSink: Sendable {
     func write(_ batch: SampleBatch) async throws
+    /// Removes every stored sample timestamped at or after `from`.
+    func erase(from: Int) async throws
 }
 
 /// NOOP's `Streams` predates Swift 6 and isn't marked Sendable, but it is a struct of arrays of plain
@@ -36,6 +38,10 @@ public actor WhoopStoreSink: SampleSink {
 
     public func write(_ batch: SampleBatch) async throws {
         try await openStore().insert(batch.streams, deviceId: Self.deviceId)
+    }
+
+    public func erase(from: Int) async throws {
+        try await openStore().deleteLiveSamples(deviceId: Self.deviceId, from: from)
     }
 
     /// Reads HR and R-R for a time range back out, wrapped so it can leave the actor.
@@ -104,10 +110,30 @@ public final class LiveCollector {
         source.connect(to: strap)
     }
 
-    public func forgetStrap() {
+    /// Ends the pairing: drops the strap, stops recording and clears the history start, so the next
+    /// pairing begins fresh. `erase` also deletes what this pairing recorded (a strap picked by
+    /// mistake); otherwise anything not yet saved is written first.
+    public func forgetStrap(erase: Bool) async {
+        let start = pairedAt
         source.forget()
+        if erase {
+            pending = []
+        } else {
+            await flush()
+        }
+        batcher = nil
+        pairedAt = nil
+        defaults.removeObject(forKey: Self.pairedAtKey)
         heartRate = nil
         batteryPercent = nil
+        firmware = nil
+        lastSampleAt = nil
+        guard erase, let start else { return }
+        do {
+            try await sink.erase(from: start)
+        } catch {
+            lastWriteError = "Couldn't erase the forgotten strap's samples: \(error)"
+        }
     }
 
     /// Writes everything collected since the last flush. A failed write is kept and retried next time.

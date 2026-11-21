@@ -9,6 +9,16 @@ public struct DiscoveredStrap: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let name: String
     public let rssi: Int
+
+    /// Same name rule that switches R-R to milliseconds.
+    public var isWhoop: Bool { RRUnit.forPeripheral(named: name) == .milliseconds }
+
+    /// WHOOP straps first, then by signal strength, so another heart-rate device is harder to pick by mistake.
+    public static func whoopFirst(_ straps: [DiscoveredStrap]) -> [DiscoveredStrap] {
+        straps.sorted { lhs, rhs in
+            lhs.isWhoop != rhs.isWhoop ? lhs.isWhoop : lhs.rssi > rhs.rssi
+        }
+    }
 }
 
 public enum HeartSourceEvent: Sendable {

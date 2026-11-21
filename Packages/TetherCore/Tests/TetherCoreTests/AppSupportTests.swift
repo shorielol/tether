@@ -91,3 +91,14 @@ struct InstallExpiryTests {
         #expect(late.reminderDate == nil)
     }
 }
+
+@Suite("Strap list")
+struct StrapListTests {
+    @Test func whoopStrapsAreRecognisedAndListedFirst() {
+        let bpm = DiscoveredStrap(id: UUID(), name: "BPM", rssi: -40)
+        let whoop = DiscoveredStrap(id: UUID(), name: "WHOOP 4C1234567", rssi: -70)
+        #expect(whoop.isWhoop)
+        #expect(!bpm.isWhoop)
+        #expect(DiscoveredStrap.whoopFirst([bpm, whoop]).map(\.name) == ["WHOOP 4C1234567", "BPM"])
+    }
+}
