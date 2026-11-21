@@ -12,12 +12,19 @@ final class AppModel {
     private static let expiryReminderId = "tether.expiry"
     /// One day at one sample a second, with headroom for R-R (more than one beat a second).
     private static let dayReadLimit = 250_000
+    private static let scoringInterval: TimeInterval = 15 * 60
 
     let collector: LiveCollector
     private let sink: WhoopStoreSink
     /// Today's analytics from stored samples, refreshed every 30 s while the app is open.
     private(set) var today: TodaySnapshot?
     @ObservationIgnored private var todayLoop: Task<Void, Never>?
+    /// Scored nights, oldest first (last 30 days).
+    private(set) var nights: [NightSummary] = []
+    /// The most recent scoring of today's night, which also carries Charge drivers.
+    private(set) var latestNight: NightSummary?
+    private(set) var scoredNightCount = 0
+    @ObservationIgnored private var lastScoredAt: Date?
     private(set) var profile: UserProfile?
     private(set) var onboarded: Bool
     private(set) var phoneCharging: Bool?
@@ -44,8 +51,13 @@ final class AppModel {
                                  lowPowerMode: lowPowerMode))
     }
 
-    /// Scored nights arrive with the day scorer. Until then the countdown starts from zero.
-    var baseline: BaselineProgress { BaselineProgress(scoredNights: 0) }
+    var baseline: BaselineProgress { BaselineProgress(scoredNights: scoredNightCount) }
+
+    /// Last night with sleep found in it: the fresh score if it has one, else the latest stored night.
+    var lastNight: NightSummary? {
+        if let latestNight, latestNight.sleepStart != nil { return latestNight }
+        return nights.last { $0.sleepStart != nil }
+    }
 
     var installExpiry: InstallExpiry.Status? { InstallExpiry.current() }
 
@@ -83,14 +95,19 @@ final class AppModel {
         #if DEBUG
         if DebugFixture.isOn {
             let profile = profile
+            nights = DebugFixture.nights()
+            latestNight = nights.last
+            scoredNightCount = nights.count
             Task { today = await Task.detached { DebugFixture.today(profile: profile) }.value }
             return
         }
         #endif
         todayLoop?.cancel()
+        lastScoredAt = nil
         todayLoop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshToday()
+                await self?.scoreNights()
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -114,6 +131,36 @@ final class AppModel {
             TodayAnalytics.compute(hr: batch.streams.hr, rr: batch.streams.rr, profile: profile,
                                    window: start...now, now: now)
         }.value
+    }
+
+    /// Scores every night since pairing that hasn't been scored, plus yesterday and today again (their
+    /// nights may have finished since the last pass). Runs at most every 15 minutes while the app is open.
+    func scoreNights() async {
+        guard let pairedAt = collector.pairedAt, let profile else { return }
+        if let lastScoredAt, Date().timeIntervalSince(lastScoredAt) < Self.scoringInterval { return }
+        lastScoredAt = .now
+        let calendar = Calendar.current
+        let now = Int(Date().timeIntervalSince1970)
+        let today = calendar.startOfDay(for: .now)
+        let alreadyScored = Set((try? await sink.scoredDays(from: "0000-01-01", to: "9999-12-31")) ?? [])
+        var day = calendar.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(pairedAt)))
+        var latest: NightSummary?
+        while day <= today {
+            let dayStart = Int(day.timeIntervalSince1970)
+            let isRecent = calendar.dateComponents([.day], from: day, to: today).day ?? 0 <= 1
+            if isRecent || !alreadyScored.contains(DayScorer.dayKey(dayStart: dayStart)) {
+                if let scored = try? await sink.scoreDay(dayStart: dayStart, now: now, profile: profile) {
+                    latest = scored
+                }
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        latestNight = latest
+        let monthAgo = calendar.date(byAdding: .day, value: -30, to: today) ?? today
+        nights = (try? await sink.nights(from: DayScorer.dayKey(dayStart: Int(monthAgo.timeIntervalSince1970)),
+                                         to: DayScorer.dayKey(dayStart: Int(today.timeIntervalSince1970)))) ?? nights
+        scoredNightCount = (try? await sink.baselineNightCount()) ?? scoredNightCount
     }
 
     func refreshDeviceState() {

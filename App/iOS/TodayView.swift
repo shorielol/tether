@@ -28,7 +28,14 @@ struct TodayView: View {
                 NotYet(title: "Not recording yet", detail: "Pair your strap from the Strap tab to start your history.")
                     .card()
             }
-            BaselineRow(progress: model.baseline)
+            if let night = model.lastNight {
+                LastNightRow(night: night)
+            }
+            if let charge = (model.latestNight ?? model.lastNight)?.charge {
+                ChargeCard(charge: charge, drivers: (model.latestNight ?? model.lastNight)?.drivers ?? [])
+            } else {
+                BaselineRow(progress: model.baseline)
+            }
         }
     }
 }
@@ -74,6 +81,30 @@ private struct BaselineRow: View {
                     .font(.subheadline.weight(.semibold))
                 Text("Sleep and Charge are scored each morning from the night before.")
                     .font(.caption).foregroundStyle(TetherBrand.sub)
+            }
+        }
+        .card(padding: 14)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct LastNightRow: View {
+    let night: NightSummary
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "moon.zzz.fill").foregroundStyle(TetherBrand.dusk)
+                .frame(width: 34, height: 34)
+                .background(TetherBrand.dusk.opacity(0.15), in: .circle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Slept \(SleepFormat.duration(minutes: night.totalSleepMin))")
+                    .font(.subheadline.weight(.semibold)).monospacedDigit()
+                Text("\(SleepFormat.time(night.sleepStart)) – \(SleepFormat.time(night.sleepEnd)) · estimated from heart rate")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+            }
+            Spacer()
+            if let hrv = night.hrv {
+                Text("HRV \(Int(hrv.rounded()))").font(.subheadline.weight(.semibold)).monospacedDigit()
             }
         }
         .card(padding: 14)

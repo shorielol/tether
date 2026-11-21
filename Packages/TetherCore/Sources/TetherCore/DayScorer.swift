@@ -10,6 +10,27 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
         public let valueText: String
         public let deltaPoints: Int
         public var id: String { label }
+
+        public init(label: String, valueText: String, deltaPoints: Int) {
+            self.label = label
+            self.valueText = valueText
+            self.deltaPoints = deltaPoints
+        }
+    }
+
+    /// One stretch of the hypnogram.
+    public struct Stage: Sendable, Equatable, Identifiable {
+        public enum Kind: String, Sendable, CaseIterable { case wake, rem, light, deep }
+        public let start: Int
+        public let end: Int
+        public let kind: Kind
+        public var id: Int { start }
+
+        public init(start: Int, end: Int, kind: Kind) {
+            self.start = start
+            self.end = end
+            self.kind = kind
+        }
     }
 
     public let day: String
@@ -29,8 +50,29 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
     public let rest: Double?
     public let drivers: [Driver]
     /// Estimated from heart rate alone until motion data exists.
-    public let stages: [StageSegment]
+    public let stages: [Stage]
     public var id: String { day }
+
+    public init(day: String, sleepStart: Int?, sleepEnd: Int?, totalSleepMin: Double?, efficiency: Double?,
+                deepMin: Double?, remMin: Double?, lightMin: Double?, disturbances: Int?, restingHR: Int?,
+                hrv: Double?, respRate: Double?, charge: Double?, rest: Double?, drivers: [Driver], stages: [Stage]) {
+        self.day = day
+        self.sleepStart = sleepStart
+        self.sleepEnd = sleepEnd
+        self.totalSleepMin = totalSleepMin
+        self.efficiency = efficiency
+        self.deepMin = deepMin
+        self.remMin = remMin
+        self.lightMin = lightMin
+        self.disturbances = disturbances
+        self.restingHR = restingHR
+        self.hrv = hrv
+        self.respRate = respRate
+        self.charge = charge
+        self.rest = rest
+        self.drivers = drivers
+        self.stages = stages
+    }
 }
 
 /// Scores the night that ends on a given day with NOOP's `AnalyticsEngine`, the way NOOP's own app does
@@ -97,7 +139,15 @@ public enum DayScorer {
             drivers: result.chargeDrivers.map {
                 NightSummary.Driver(label: $0.label, valueText: $0.valueText, deltaPoints: $0.deltaPoints)
             },
-            stages: main?.stages ?? [])
+            stages: stages(main?.stages ?? []))
+    }
+
+    static func stages(_ segments: [StageSegment]) -> [NightSummary.Stage] {
+        segments.compactMap { segment in
+            NightSummary.Stage.Kind(rawValue: segment.stage).map {
+                NightSummary.Stage(start: segment.start, end: segment.end, kind: $0)
+            }
+        }
     }
 
     /// A stored night, rebuilt from the daily row and its saved sleep session. Charge drivers aren't stored.
@@ -108,7 +158,7 @@ public enum DayScorer {
             totalSleepMin: daily.totalSleepMin, efficiency: daily.efficiency, deepMin: daily.deepMin,
             remMin: daily.remMin, lightMin: daily.lightMin, disturbances: daily.disturbances,
             restingHR: daily.restingHr, hrv: daily.avgHrv, respRate: daily.respRateBpm,
-            charge: daily.recovery, rest: nil, drivers: [], stages: stages)
+            charge: daily.recovery, rest: nil, drivers: [], stages: Self.stages(stages))
     }
 }
 

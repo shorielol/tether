@@ -27,6 +27,36 @@ enum DebugFixture {
         return TodayAnalytics.compute(hr: hr, rr: rr, profile: profile, window: midnight...end, now: end)
     }
 
+    /// Six sample nights ending last night; Charge appears from the fourth, as it would for real.
+    static func nights() -> [NightSummary] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        return (0..<6).map { index in
+            let day = calendar.date(byAdding: .day, value: index - 5, to: today) ?? today
+            let dayStart = Int(day.timeIntervalSince1970)
+            let bed = dayStart - 3_600 + index * 600, wake = dayStart + 7 * 3_600 - index * 300
+            let pattern: [(NightSummary.Stage.Kind, Int)] = [(.wake, 12), (.light, 25), (.deep, 50), (.light, 30),
+                (.rem, 22), (.light, 35), (.deep, 35), (.rem, 30), (.wake, 6), (.light, 40), (.rem, 35),
+                (.light, 45), (.rem, 30), (.wake, 8)]
+            var at = bed
+            var stages: [NightSummary.Stage] = []
+            for (kind, minutes) in pattern where at < wake {
+                stages.append(.init(start: at, end: min(wake, at + minutes * 60), kind: kind))
+                at += minutes * 60
+            }
+            let hasCharge = index >= 3
+            return NightSummary(
+                day: DayScorer.dayKey(dayStart: dayStart), sleepStart: bed, sleepEnd: wake,
+                totalSleepMin: Double(wake - bed) / 60 * 0.92, efficiency: 0.92, deepMin: 85, remMin: 117,
+                lightMin: 175, disturbances: 3, restingHR: 52 - index % 2, hrv: 54 + Double(index * 2),
+                respRate: 14.6, charge: hasCharge ? [58, 71, 64][index - 3] : nil, rest: hasCharge ? 78 : nil,
+                drivers: index == 5 ? [.init(label: "HRV", valueText: "6 ms above your average", deltaPoints: 7),
+                                       .init(label: "Sleep", valueText: "58 min short of your need", deltaPoints: -5),
+                                       .init(label: "Resting HR", valueText: "1 bpm below your average", deltaPoints: 2)] : [],
+                stages: stages)
+        }
+    }
+
     private static func base(_ hour: Double) -> Double {
         switch hour {
         case ..<7: 52
