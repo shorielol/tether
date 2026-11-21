@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import TetherCore
+import TetherFiles
 import UIKit
 import UserNotifications
 
@@ -13,6 +14,8 @@ final class AppModel {
     /// One day at one sample a second, with headroom for R-R (more than one beat a second).
     private static let dayReadLimit = 250_000
     private static let scoringInterval: TimeInterval = 15 * 60
+    private static let syncInterval: TimeInterval = 15 * 60
+    private static let folderKey = "tether.folder"
 
     let collector: LiveCollector
     private let sink: WhoopStoreSink
@@ -25,6 +28,11 @@ final class AppModel {
     private(set) var latestNight: NightSummary?
     private(set) var scoredNightCount = 0
     @ObservationIgnored private var lastScoredAt: Date?
+    /// The iCloud Drive folder shared with the Mac.
+    private(set) var folderName: String?
+    private(set) var lastSavedAt: Date?
+    private(set) var folderError: String?
+    @ObservationIgnored private var lastSyncAt: Date?
     private(set) var profile: UserProfile?
     private(set) var onboarded: Bool
     private(set) var phoneCharging: Bool?
@@ -39,6 +47,7 @@ final class AppModel {
         profile = UserProfile.load(from: defaults)
         onboarded = defaults.bool(forKey: Self.onboardedKey)
         collector.startAutoFlush(every: 30)
+        folderName = defaults.data(forKey: Self.folderKey).flatMap(SharedFolder.resolve)?.folder.url.lastPathComponent
         UIDevice.current.isBatteryMonitoringEnabled = true
         refreshDeviceState()
         watchDeviceState()
@@ -108,6 +117,7 @@ final class AppModel {
             while !Task.isCancelled {
                 await self?.refreshToday()
                 await self?.scoreNights()
+                await self?.syncFolder()
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -161,6 +171,94 @@ final class AppModel {
         nights = (try? await sink.nights(from: DayScorer.dayKey(dayStart: Int(monthAgo.timeIntervalSince1970)),
                                          to: DayScorer.dayKey(dayStart: Int(today.timeIntervalSince1970)))) ?? nights
         scoredNightCount = (try? await sink.baselineNightCount()) ?? scoredNightCount
+    }
+
+    // MARK: - Shared folder
+
+    /// Keeps access to the folder picked in Files, then writes to it straight away.
+    func setFolder(_ url: URL) {
+        let opened = url.startAccessingSecurityScopedResource()
+        defer { if opened { url.stopAccessingSecurityScopedResource() } }
+        do {
+            UserDefaults.standard.set(try SharedFolder.bookmark(for: url), forKey: Self.folderKey)
+            folderName = url.lastPathComponent
+            folderError = nil
+            Task { await syncFolder(force: true) }
+        } catch {
+            folderError = "Couldn't keep access to that folder: \(error.localizedDescription)"
+        }
+    }
+
+    /// Imports the Mac's recordings, then writes profile.md and yesterday's and today's day files.
+    /// Runs at most every 15 minutes, plus whenever the app goes to the background.
+    func syncFolder(force: Bool = false) async {
+        guard let data = UserDefaults.standard.data(forKey: Self.folderKey),
+              let (folder, stale) = SharedFolder.resolve(data) else { return }
+        if stale, let fresh = try? folder.withAccess({ try SharedFolder.bookmark(for: folder.url) }) {
+            UserDefaults.standard.set(fresh, forKey: Self.folderKey)
+        }
+        if !force, let lastSyncAt, Date().timeIntervalSince(lastSyncAt) < Self.syncInterval { return }
+        lastSyncAt = .now
+        guard let pairedAt = collector.pairedAt, let profile else { return }
+        if await importMacRecordings(from: folder, notBefore: pairedAt) > 0 {
+            lastScoredAt = nil
+            await scoreNights()
+        }
+        let records = await dayRecords(pairedAt: pairedAt, profile: profile)
+        do {
+            try await Task.detached(priority: .utility) {
+                try folder.withAccess {
+                    try folder.write(ProfileFile.write(profile: profile, pairedAt: pairedAt), to: ProfileFile.relativePath)
+                    for record in records {
+                        try folder.write(DayFile.write(record), to: DayFile.relativePath(day: record.day))
+                    }
+                }
+            }.value
+            lastSavedAt = .now
+            folderError = nil
+        } catch {
+            folderError = "Couldn't save to your folder: \(error.localizedDescription)"
+        }
+    }
+
+    private func importMacRecordings(from folder: SharedFolder, notBefore cutoff: Int) async -> Int {
+        var imported = 0
+        for file in folder.withAccess({ folder.pendingInbox() }) {
+            do {
+                let text = try folder.withAccess { try folder.read(url: file) }
+                imported += try await InboxImporter.importFile(text, into: sink, notBefore: cutoff)
+                try folder.withAccess { try folder.markImported(file) }
+            } catch {
+                folderError = "Couldn't import \(file.lastPathComponent) from your Mac: \(error.localizedDescription)"
+            }
+        }
+        return imported
+    }
+
+    /// Yesterday and today, each with what Today showed and the night that ended on it.
+    private func dayRecords(pairedAt: Int, profile: UserProfile) async -> [DayRecord] {
+        let calendar = Calendar.current
+        let now = Int(Date().timeIntervalSince1970)
+        var records: [DayRecord] = []
+        for offset in [-1, 0] {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: .now)) else { continue }
+            let dayStart = Int(day.timeIntervalSince1970)
+            let key = DayScorer.dayKey(dayStart: dayStart)
+            let start = max(dayStart, pairedAt), end = min(now, dayStart + 86_399)
+            var snapshot: TodaySnapshot?
+            if start < end, let batch = try? await sink.readBack(from: start, to: end, limit: Self.dayReadLimit) {
+                let computed = await Task.detached(priority: .utility) {
+                    TodayAnalytics.compute(hr: batch.streams.hr, rr: batch.streams.rr, profile: profile,
+                                           window: start...end, now: end)
+                }.value
+                snapshot = computed.isEmpty ? nil : computed
+            }
+            let night = latestNight?.day == key ? latestNight : nights.first { $0.day == key }
+            guard snapshot != nil || night != nil else { continue }
+            records.append(DayRecord(day: key, savedAt: now, strapBatteryPct: offset == 0 ? collector.batteryPercent : nil,
+                                     today: snapshot, night: night))
+        }
+        return records
     }
 
     func refreshDeviceState() {

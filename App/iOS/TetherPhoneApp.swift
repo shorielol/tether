@@ -15,7 +15,7 @@ struct TetherPhoneApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             model.refreshDeviceState()
-            if phase == .background { Task { await model.collector.flush() } }
+            if phase == .background { Task { await model.collector.flush(); await model.syncFolder(force: true) } }
             if phase == .active, model.onboarded { Task { await model.scheduleExpiryReminder() } }
             if phase == .active { model.startTodayUpdates() } else { model.stopTodayUpdates() }
         }

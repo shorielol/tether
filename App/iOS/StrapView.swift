@@ -5,6 +5,7 @@ struct StrapView: View {
     @Environment(AppModel.self) private var model
     @State private var pairing = false
     @State private var confirmForget = false
+    @State private var pickingFolder = false
 
     var body: some View {
         TabScreen {
@@ -20,6 +21,7 @@ struct StrapView: View {
                 .card()
             }
             BedtimeCard(items: model.bedtimeItems)
+            FilesCard(picking: $pickingFolder)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Coverage, last 7 nights").font(.headline)
                 Text("Shows after your first recorded night: how much of each night was captured, and where the gaps were.")
@@ -32,6 +34,9 @@ struct StrapView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 6)
             }
+        }
+        .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result { model.setFolder(url) }
         }
         .sheet(isPresented: $pairing) {
             ScanStep(choose: { strap in
@@ -187,5 +192,32 @@ private struct ExpiryCard: View {
         let date = status.expires.formatted(.dateTime.weekday(.wide).hour().minute())
         return status.daysLeft == 1 ? "App install expires tomorrow · \(date)"
             : "App install expires in \(status.daysLeft) days · \(date)"
+    }
+}
+
+private struct FilesCard: View {
+    @Binding var picking: Bool
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Your files").font(.headline)
+            if let name = model.folderName {
+                Text("iCloud Drive / \(name)").font(.subheadline.weight(.semibold))
+                Text(model.lastSavedAt.map { "Saved at \($0.formatted(date: .omitted, time: .shortened)) · your Mac reads the same folder" }
+                     ?? "Saving soon")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+            } else {
+                Text("Pick a folder in iCloud Drive. Tether writes one readable file per day there, and Tether for Mac shows the same data from it.")
+                    .font(.subheadline).foregroundStyle(TetherBrand.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let error = model.folderError {
+                Text(error).font(.caption).foregroundStyle(TetherBrand.headsUp)
+            }
+            Button(model.folderName == nil ? "Choose folder" : "Change folder") { picking = true }
+                .fontWeight(.semibold)
+        }
+        .card()
     }
 }

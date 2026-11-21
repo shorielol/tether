@@ -36,6 +36,11 @@ struct TodayView: View {
             } else {
                 BaselineRow(progress: model.baseline)
             }
+            if let saved = model.lastSavedAt, let folder = model.folderName {
+                Text("Saved to iCloud Drive / \(folder) at \(saved.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 }
