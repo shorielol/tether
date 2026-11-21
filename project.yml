@@ -15,6 +15,8 @@ settings:
 packages:
   TetherCore:
     path: Packages/TetherCore
+  TetherFiles:
+    path: Packages/TetherFiles
 targets:
   TetherPhone:
     type: application
@@ -24,6 +26,7 @@ targets:
       - App/Shared
     dependencies:
       - package: TetherCore
+      - package: TetherFiles
     info:
       path: App/iOS/Info.plist
       properties:
@@ -47,6 +50,7 @@ targets:
       - App/Shared
     dependencies:
       - package: TetherCore
+      - package: TetherFiles
     info:
       path: App/macOS/Info.plist
       properties:

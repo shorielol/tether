@@ -57,6 +57,12 @@ public struct CoverageReport: Equatable, Sendable {
     public var fraction: Double {
         Double(capturedSeconds) / Double(window.count)
     }
+
+    public init(window: ClosedRange<Int>, capturedSeconds: Int, gaps: [ClosedRange<Int>]) {
+        self.window = window
+        self.capturedSeconds = capturedSeconds
+        self.gaps = gaps
+    }
 }
 
 public enum Coverage {

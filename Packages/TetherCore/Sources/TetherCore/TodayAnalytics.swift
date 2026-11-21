@@ -5,7 +5,7 @@ import StrandAnalytics
 /// Everything Today can honestly show from the heart rate and R-R stored so far today.
 /// Each number is nil (not zero) when there isn't enough data behind it.
 public struct TodaySnapshot: Sendable, Equatable {
-    public enum RestingSource: Sendable, Equatable { case profile, lowestFiveMinutes, defaultValue }
+    public enum RestingSource: String, Sendable, Equatable { case profile, lowestFiveMinutes, defaultValue }
 
     /// One minute's average heart rate. `segment` changes after a gap, so charts break the line there.
     public struct MinutePoint: Sendable, Equatable, Identifiable {
@@ -13,6 +13,12 @@ public struct TodaySnapshot: Sendable, Equatable {
         public let bpm: Double
         public let segment: Int
         public var id: Int { ts }
+
+        public init(ts: Int, bpm: Double, segment: Int) {
+            self.ts = ts
+            self.bpm = bpm
+            self.segment = segment
+        }
     }
 
     public struct StressHour: Sendable, Equatable, Identifiable {
@@ -22,6 +28,12 @@ public struct TodaySnapshot: Sendable, Equatable {
         /// The hour was left unscored because it looked like exercise.
         public let wasActive: Bool
         public var id: Int { hour }
+
+        public init(hour: Int, level: Double?, wasActive: Bool) {
+            self.hour = hour
+            self.level = level
+            self.wasActive = wasActive
+        }
     }
 
     public let window: ClosedRange<Int>
@@ -44,6 +56,27 @@ public struct TodaySnapshot: Sendable, Equatable {
     public let coverage: CoverageReport?
 
     public var isEmpty: Bool { minuteSeries.isEmpty }
+
+    public init(window: ClosedRange<Int>, maxHR: Int, minuteSeries: [MinutePoint], minBPM: Int?, avgBPM: Int?,
+                maxBPM: Int?, zoneMinutes: [Int], restingHR: Int, restingSource: RestingSource, effort: Double?,
+                caloriesTotal: Int?, caloriesActive: Int?, hrvNow: Double?, stressHours: [StressHour],
+                coverage: CoverageReport?) {
+        self.window = window
+        self.maxHR = maxHR
+        self.minuteSeries = minuteSeries
+        self.minBPM = minBPM
+        self.avgBPM = avgBPM
+        self.maxBPM = maxBPM
+        self.zoneMinutes = zoneMinutes
+        self.restingHR = restingHR
+        self.restingSource = restingSource
+        self.effort = effort
+        self.caloriesTotal = caloriesTotal
+        self.caloriesActive = caloriesActive
+        self.hrvNow = hrvNow
+        self.stressHours = stressHours
+        self.coverage = coverage
+    }
 }
 
 public enum TodayAnalytics {
