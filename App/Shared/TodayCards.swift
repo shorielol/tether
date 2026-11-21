@@ -348,3 +348,55 @@ struct CoverageRow: View {
         return h > 0 ? "\(h) h \(m) m" : "\(m) m"
     }
 }
+
+// MARK: - Baseline and last night
+
+/// Charge and sleep need nights; until then they take one quiet row instead of the whole screen.
+struct BaselineRow: View {
+    let progress: BaselineProgress
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().stroke(TetherBrand.track, lineWidth: 5)
+                Circle()
+                    .trim(from: 0, to: Double(progress.scoredNights) / Double(BaselineProgress.chargeNights))
+                    .stroke(TetherBrand.ember, style: .init(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(progress.chargeLabel) · \(progress.scoredNights)/\(BaselineProgress.chargeNights)")
+                    .font(.subheadline.weight(.semibold))
+                Text("Sleep and Charge are scored each morning from the night before.")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+            }
+        }
+        .card(padding: 14)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct LastNightRow: View {
+    let night: NightSummary
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "moon.zzz.fill").foregroundStyle(TetherBrand.dusk)
+                .frame(width: 34, height: 34)
+                .background(TetherBrand.dusk.opacity(0.15), in: .circle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Slept \(SleepFormat.duration(minutes: night.totalSleepMin))")
+                    .font(.subheadline.weight(.semibold)).monospacedDigit()
+                Text("\(SleepFormat.time(night.sleepStart)) – \(SleepFormat.time(night.sleepEnd)) · estimated from heart rate")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+            }
+            Spacer()
+            if let hrv = night.hrv {
+                Text("HRV \(Int(hrv.rounded()))").font(.subheadline.weight(.semibold)).monospacedDigit()
+            }
+        }
+        .card(padding: 14)
+        .accessibilityElement(children: .combine)
+    }
+}
