@@ -33,6 +33,12 @@ struct MainTabs: View {
             Tab("Trends", systemImage: "chart.bar", value: .trends) { TrendsView() }
             Tab("Strap", systemImage: "heart", value: Section.strap) { StrapView() }
         }
+        // Lock-screen widgets open `tether://sleep` or `tether://today`.
+        .onOpenURL { url in
+            if url.scheme == "tether", let section = url.host().flatMap(Section.init(rawValue:)) {
+                selection = section
+            }
+        }
     }
 }
 

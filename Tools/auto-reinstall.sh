@@ -11,6 +11,8 @@ cd "$(dirname "$0")/.."
 
 DEVICE="YOUR-IPHONE-ID"
 BUNDLE_ID="com.shorielol.tether"
+# The app and its lock-screen widget extension each carry their own 7-day profile (ADR-005).
+BUNDLE_IDS=("$BUNDLE_ID" "$BUNDLE_ID.widgets")
 RENEW_DAYS=3
 BUILD_DIR="build/dd-auto"
 APP="$BUILD_DIR/Build/Products/Release-iphoneos/TetherPhone.app"
@@ -24,12 +26,20 @@ notify() {
   osascript -e "display notification \"$1\" with title \"Tether\"" >/dev/null 2>&1 || true
 }
 
-expiry_epoch() {
-  local profile="$APP/embedded.mobileprovision"
+profile_expiry() {
+  local profile="$1/embedded.mobileprovision"
   [ -f "$profile" ] || { echo 0; return; }
   local iso
   iso=$(security cms -D -i "$profile" 2>/dev/null | plutil -extract ExpirationDate raw -o - - 2>/dev/null) || { echo 0; return; }
   date -juf "%Y-%m-%dT%H:%M:%SZ" "$iso" +%s 2>/dev/null || echo 0
+}
+
+# Whichever runs out first: the app or the widget extension. A missing profile counts as expired.
+expiry_epoch() {
+  local app widgets
+  app=$(profile_expiry "$APP")
+  widgets=$(profile_expiry "$APP/PlugIns/TetherWidgets.appex")
+  [ "$app" -lt "$widgets" ] && echo "$app" || echo "$widgets"
 }
 
 now=$(date +%s)
@@ -45,14 +55,16 @@ if ! xcrun devicectl device info details --device "$DEVICE" >/dev/null 2>&1; the
   exit 1
 fi
 
-# Remove only Tether's cached team profile so Xcode fetches a fresh 7-day one.
+# Remove only Tether's cached team profiles (app + widgets) so Xcode fetches fresh 7-day ones.
 for f in "$PROFILES"/*.mobileprovision; do
   [ -f "$f" ] || continue
   name=$(security cms -D -i "$f" 2>/dev/null | plutil -extract Name raw -o - - 2>/dev/null)
-  if [ "$name" = "iOS Team Provisioning Profile: $BUNDLE_ID" ]; then
-    echo "dropping cached profile $(basename "$f")"
-    rm -f "$f"
-  fi
+  for id in "${BUNDLE_IDS[@]}"; do
+    if [ "$name" = "iOS Team Provisioning Profile: $id" ]; then
+      echo "dropping cached profile $(basename "$f") ($id)"
+      rm -f "$f"
+    fi
+  done
 done
 
 if ! xcodebuild -project Tether.xcodeproj -scheme TetherPhone -configuration Release \

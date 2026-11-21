@@ -1,29 +1,171 @@
 import SwiftUI
+import TetherSnapshot
 import WidgetKit
 
+/// Three small lock-screen widgets for under the clock. They show this morning's numbers once the phone
+/// has seen the night end (AppModel.morningPass), and dashes from 04:00 until the next night is scored.
 @main
 struct TetherWidgetBundle: WidgetBundle {
     var body: some Widget {
-        SpikeWidget()
+        ChargeWidget()
+        SleepWidget()
+        RestingHRWidget()
     }
 }
 
-/// Signing spike only: proves the free team can sign a widget extension with an App Group.
-struct SpikeWidget: Widget {
+// MARK: - Timeline
+
+struct MorningEntry: TimelineEntry {
+    let date: Date
+    let snapshot: MorningSnapshot?
+
+    /// The snapshot only while it belongs to this wake day; yesterday's numbers never show as today's.
+    var fresh: MorningSnapshot? {
+        guard let snapshot, snapshot.isFresh(at: date) else { return nil }
+        return snapshot
+    }
+}
+
+struct MorningProvider: TimelineProvider {
+    static let sample = MorningSnapshot(wakeDay: WakeDay.key(for: .now), savedAt: 0, sleepMin: 437, rest: 81,
+                                        charge: 67, baselineNights: 6, restingHR: 52)
+
+    func placeholder(in context: Context) -> MorningEntry {
+        MorningEntry(date: .now, snapshot: Self.sample)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (MorningEntry) -> Void) {
+        let stored = SnapshotStore.shared()?.read()
+        completion(MorningEntry(date: .now, snapshot: context.isPreview && stored == nil ? Self.sample : stored))
+    }
+
+    /// Now, then dashes at the next 04:00. The app reloads the timeline when it publishes a new morning.
+    func getTimeline(in context: Context, completion: @escaping (Timeline<MorningEntry>) -> Void) {
+        let now = Date()
+        let stored = SnapshotStore.shared()?.read()
+        let boundary = WakeDay.nextBoundary(after: now)
+        let entries = [MorningEntry(date: now, snapshot: stored), MorningEntry(date: boundary, snapshot: stored)]
+        completion(Timeline(entries: entries, policy: .after(boundary)))
+    }
+}
+
+// MARK: - Widgets
+
+struct ChargeWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "spike", provider: SpikeProvider()) { _ in
-            Text("T")
+        StaticConfiguration(kind: "tether.charge", provider: MorningProvider()) { entry in
+            ChargeView(snapshot: entry.fresh)
+                .containerBackground(for: .widget) {}
+                .widgetURL(URL(string: "tether://today"))
         }
+        .configurationDisplayName("Charge")
+        .description("This morning's Charge, once you're up.")
         .supportedFamilies([.accessoryCircular])
     }
 }
 
-struct SpikeEntry: TimelineEntry { let date: Date }
-
-struct SpikeProvider: TimelineProvider {
-    func placeholder(in context: Context) -> SpikeEntry { SpikeEntry(date: .now) }
-    func getSnapshot(in context: Context, completion: @escaping (SpikeEntry) -> Void) { completion(SpikeEntry(date: .now)) }
-    func getTimeline(in context: Context, completion: @escaping (Timeline<SpikeEntry>) -> Void) {
-        completion(Timeline(entries: [SpikeEntry(date: .now)], policy: .never))
+struct SleepWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "tether.sleep", provider: MorningProvider()) { entry in
+            SleepView(snapshot: entry.fresh)
+                .containerBackground(for: .widget) {}
+                .widgetURL(URL(string: "tether://sleep"))
+        }
+        .configurationDisplayName("Sleep")
+        .description("Hours slept last night. The ring is your Rest score.")
+        .supportedFamilies([.accessoryCircular])
     }
 }
+
+struct RestingHRWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "tether.restingHR", provider: MorningProvider()) { entry in
+            RestingHRView(snapshot: entry.fresh)
+                .containerBackground(for: .widget) {}
+                .widgetURL(URL(string: "tether://sleep"))
+        }
+        .configurationDisplayName("Resting heart rate")
+        .description("Last night's resting heart rate.")
+        .supportedFamilies([.accessoryCircular])
+    }
+}
+
+// MARK: - Views
+
+private let dash = "–"
+
+struct ChargeView: View {
+    let snapshot: MorningSnapshot?
+
+    var body: some View {
+        if let snapshot, let charge = snapshot.charge {
+            ring(value: charge / 100, centre: "\(Int(charge.rounded()))")
+        } else if let snapshot {
+            // Baseline still filling: show how many of the 4 nights are in.
+            let needed = MorningSnapshot.chargeNightsNeeded
+            ring(value: snapshot.chargeProgress, centre: "\(min(snapshot.baselineNights, needed))/\(needed)", small: true)
+        } else {
+            ring(value: 0, centre: dash)
+        }
+    }
+
+    private func ring(value: Double, centre: String, small: Bool = false) -> some View {
+        Gauge(value: value) {
+            Image(systemName: "bolt.fill")
+        } currentValueLabel: {
+            Text(centre).font(small ? .caption : .title3).fontWeight(.semibold).monospacedDigit()
+        }
+        .gaugeStyle(.accessoryCircular)
+        .widgetAccentable()
+    }
+}
+
+struct SleepView: View {
+    let snapshot: MorningSnapshot?
+
+    var body: some View {
+        Gauge(value: (snapshot?.rest ?? 0) / 100) {
+            Image(systemName: "moon.fill")
+        } currentValueLabel: {
+            Text(snapshot?.sleepMin.map(Self.hoursMinutes) ?? dash)
+                .font(.callout).fontWeight(.semibold).monospacedDigit()
+        }
+        .gaugeStyle(.accessoryCircular)
+        .widgetAccentable()
+    }
+
+    /// 437 → "7:17".
+    static func hoursMinutes(_ minutes: Double) -> String {
+        let total = Int(minutes.rounded())
+        return "\(total / 60):" + String(format: "%02d", total % 60)
+    }
+}
+
+struct RestingHRView: View {
+    let snapshot: MorningSnapshot?
+
+    var body: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            VStack(spacing: 0) {
+                Image(systemName: "heart.fill").font(.caption2).widgetAccentable()
+                Text(snapshot?.restingHR.map(String.init) ?? dash)
+                    .font(.title3).fontWeight(.semibold).monospacedDigit()
+                Text("bpm").font(.system(size: 9)).opacity(0.7)
+            }
+        }
+    }
+}
+
+// MARK: - Previews
+
+private let previewEntries: [MorningEntry] = [
+    MorningEntry(date: .now, snapshot: MorningProvider.sample),
+    MorningEntry(date: .now, snapshot: MorningSnapshot(wakeDay: WakeDay.key(for: .now), savedAt: 0, sleepMin: 402,
+                                                       rest: 70, charge: nil, baselineNights: 2, restingHR: 55)),
+    MorningEntry(date: .now, snapshot: nil),
+]
+
+#Preview("Charge", as: .accessoryCircular) { ChargeWidget() } timeline: { for e in previewEntries { e } }
+#Preview("Sleep", as: .accessoryCircular) { SleepWidget() } timeline: { for e in previewEntries { e } }
+#Preview("Resting HR", as: .accessoryCircular) { RestingHRWidget() } timeline: { for e in previewEntries { e } }

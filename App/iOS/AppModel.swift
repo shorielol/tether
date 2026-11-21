@@ -2,8 +2,10 @@ import Foundation
 import Observation
 import TetherCore
 import TetherFiles
+import TetherSnapshot
 import UIKit
 import UserNotifications
+import WidgetKit
 
 /// Owns the one collector for the app's lifetime and the phone-side state the screens read.
 @MainActor
@@ -16,6 +18,9 @@ final class AppModel {
     private static let scoringInterval: TimeInterval = 15 * 60
     private static let syncInterval: TimeInterval = 15 * 60
     private static let folderKey = "tether.folder"
+    /// The morning pass looks for a finished night from 04:00 until this hour.
+    private static let morningEndHour = 16
+    private static let morningTick: Duration = .seconds(60)
 
     let collector: LiveCollector
     private let sink: WhoopStoreSink
@@ -33,6 +38,8 @@ final class AppModel {
     private(set) var lastSavedAt: Date?
     private(set) var folderError: String?
     @ObservationIgnored private var lastSyncAt: Date?
+    @ObservationIgnored private var lastMorningPassAt: Date?
+    @ObservationIgnored private var morningLoop: Task<Void, Never>?
     private(set) var profile: UserProfile?
     private(set) var onboarded: Bool
     private(set) var phoneCharging: Bool?
@@ -51,6 +58,7 @@ final class AppModel {
         UIDevice.current.isBatteryMonitoringEnabled = true
         refreshDeviceState()
         watchDeviceState()
+        startMorningLoop()
     }
 
     var bedtimeItems: [BedtimeCheck.Item] {
@@ -171,7 +179,68 @@ final class AppModel {
         nights = (try? await sink.nights(from: DayScorer.dayKey(dayStart: Int(monthAgo.timeIntervalSince1970)),
                                          to: DayScorer.dayKey(dayStart: Int(today.timeIntervalSince1970)))) ?? nights
         scoredNightCount = (try? await sink.baselineNightCount()) ?? scoredNightCount
+        publishMorning(night: latest, baselineNights: scoredNightCount)
     }
+
+    // MARK: - Lock-screen widgets
+
+    /// Runs for the app's whole life. Overnight the strap's Bluetooth stream keeps the app alive in the
+    /// background, the same way the collector's auto-flush keeps writing, so this sees the night end.
+    private func startMorningLoop() {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "tether.debugMorning") {
+            publishDebugMorning()
+            return
+        }
+        #endif
+        morningLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.morningPass()
+                try? await Task.sleep(for: Self.morningTick)
+            }
+        }
+    }
+
+    /// From 04:00 until the afternoon, at most every 15 minutes: score this morning's night and update the
+    /// widgets if its numbers changed.
+    func morningPass() async {
+        guard let pairedAt = collector.pairedAt, let profile else { return }
+        let now = Date()
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: now)
+        guard (WakeDay.boundaryHour..<Self.morningEndHour).contains(hour) else { return }
+        if let lastMorningPassAt, now.timeIntervalSince(lastMorningPassAt) < Self.scoringInterval { return }
+        lastMorningPassAt = now
+        let dayStart = Int(calendar.startOfDay(for: now).timeIntervalSince1970)
+        guard dayStart + 86_400 > pairedAt else { return }
+        await collector.flush()
+        let night = try? await sink.scoreDay(dayStart: dayStart, now: Int(now.timeIntervalSince1970), profile: profile)
+        let baselineNights = (try? await sink.baselineNightCount()) ?? scoredNightCount
+        publishMorning(night: night, baselineNights: baselineNights)
+    }
+
+    private func publishMorning(night: NightSummary?, baselineNights: Int) {
+        guard let store = SnapshotStore.shared() else { return }
+        let decision = MorningCheck.decide(night: night, baselineNights: baselineNights, now: .now,
+                                           published: store.read())
+        guard case let .publish(snapshot) = decision else { return }
+        do {
+            try store.write(snapshot)
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            storeError = "Couldn't update the lock-screen widgets: \(error.localizedDescription)"
+        }
+    }
+
+    #if DEBUG
+    /// `-tether.debugMorning YES` fills the widgets with fixture numbers, to check them without a strap.
+    private func publishDebugMorning() {
+        let snapshot = MorningSnapshot(wakeDay: WakeDay.key(for: .now), savedAt: Int(Date().timeIntervalSince1970),
+                                       sleepMin: 437, rest: 81, charge: 67, baselineNights: 6, restingHR: 52)
+        try? SnapshotStore.shared()?.write(snapshot)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+    #endif
 
     // MARK: - Shared folder
 
