@@ -23,6 +23,6 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.healthcare-fitness</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Tether shows your strap's live heart rate when it's in range. Nothing is saved on this Mac.</string>
+	<string>Tether records your strap's heart rate on this Mac while your iPhone isn't holding it, and passes it to your iPhone.</string>
 </dict>
 </plist>
