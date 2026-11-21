@@ -1,4 +1,5 @@
 import Foundation
+import StrandAnalytics
 
 /// The four things that decide whether tonight records cleanly. A reading the phone can't get is
 /// shown as unknown, never as a pass.
@@ -64,8 +65,9 @@ public enum BedtimeCheck {
 
 /// How many scored nights the personal baselines still need.
 public struct BaselineProgress: Sendable, Equatable {
-    public static let chargeNights = 4
-    public static let sleepNeedNights = 14
+    /// NOOP's own thresholds: Charge scores from `minNightsSeed` nights, the baseline is trusted at `minNightsTrust`.
+    public static let chargeNights = Baselines.minNightsSeed
+    public static let sleepNeedNights = Baselines.minNightsTrust
 
     public let scoredNights: Int
 
