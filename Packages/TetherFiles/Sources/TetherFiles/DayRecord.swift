@@ -8,12 +8,16 @@ public struct DayRecord: Sendable, Equatable {
     public let strapBatteryPct: Int?
     public let today: TodaySnapshot?
     public let night: NightSummary?
+    /// Stretches of the day Tether for Mac recorded while the phone didn't hold the strap.
+    public let macSpans: [ClosedRange<Int>]
 
-    public init(day: String, savedAt: Int, strapBatteryPct: Int?, today: TodaySnapshot?, night: NightSummary?) {
+    public init(day: String, savedAt: Int, strapBatteryPct: Int?, today: TodaySnapshot?, night: NightSummary?,
+                macSpans: [ClosedRange<Int>] = []) {
         self.day = day
         self.savedAt = savedAt
         self.strapBatteryPct = strapBatteryPct
         self.today = today
         self.night = night
+        self.macSpans = macSpans
     }
 }

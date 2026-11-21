@@ -93,7 +93,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.healthcare-fitness
-        NSBluetoothAlwaysUsageDescription: "Tether shows your strap's live heart rate when it's in range. Nothing is saved on this Mac."
+        NSBluetoothAlwaysUsageDescription: "Tether records your strap's heart rate on this Mac while your iPhone isn't holding it, and passes it to your iPhone."
     entitlements:
       path: App/macOS/TetherMac.entitlements
       properties:

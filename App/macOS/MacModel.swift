@@ -15,14 +15,28 @@ final class MacModel {
     private(set) var folderName: String?
     private(set) var records: [DayRecord] = []
     private(set) var readError: String?
+    /// What the iPhone wrote in profile.md: the wearer, the history start and the strap's name.
+    private(set) var phoneProfile: PhoneProfile?
+    /// This Mac's own strap link. Created once the model exists, because it reads the folder through it.
+    private(set) var recorder: MacRecorder!
     @ObservationIgnored private var refreshLoop: Task<Void, Never>?
+
+    struct PhoneProfile: Equatable {
+        let profile: UserProfile
+        let historyStarts: Int?
+        let strapName: String?
+    }
 
     init() {
         folderName = folder?.url.lastPathComponent
+        recorder = MacRecorder(folder: { [weak self] in self?.folder },
+                               phoneSavedAt: { [weak self] in self?.lastSyncedAt.map { Int($0.timeIntervalSince1970) } },
+                               wantedStrapName: { [weak self] in self?.phoneProfile?.strapName })
         #if DEBUG
         if DebugFixture.isOn { loadFixture(); return }
         #endif
         startRefreshing()
+        recorder.start()
     }
 
     var today: TodaySnapshot? { records.first { $0.day == DayScorer.dayKey(dayStart: Self.todayStart) }?.today }
@@ -61,6 +75,10 @@ final class MacModel {
         do {
             loaded = try folder.withAccess {
                 try folder.dayFiles().suffix(Self.recentDays).map { try DayFile.read(folder.read(url: $0)) }
+            }
+            phoneProfile = try? folder.withAccess {
+                let read = try ProfileFile.read(folder.read(ProfileFile.relativePath))
+                return PhoneProfile(profile: read.profile, historyStarts: read.pairedAt, strapName: read.strapName)
             }
             readError = nil
         } catch {

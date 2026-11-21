@@ -8,6 +8,13 @@ public protocol SampleSink: Sendable {
     func write(_ batch: SampleBatch) async throws
     /// Removes every stored sample timestamped at or after `from`.
     func erase(from: Int) async throws
+    /// Seconds in `from...to` that already have a heart-rate sample. Imports use it to skip
+    /// seconds this store recorded itself.
+    func hrSeconds(from: Int, to: Int) async throws -> Set<Int>
+}
+
+public extension SampleSink {
+    func hrSeconds(from: Int, to: Int) async throws -> Set<Int> { [] }
 }
 
 /// NOOP's `Streams` predates Swift 6 and isn't marked Sendable, but it is a struct of arrays of plain
@@ -44,6 +51,11 @@ public actor WhoopStoreSink: SampleSink {
         try await openStore().deleteLiveSamples(deviceId: Self.deviceId, from: from)
     }
 
+    public func hrSeconds(from: Int, to: Int) async throws -> Set<Int> {
+        let samples = try await openStore().hrSamples(deviceId: Self.deviceId, from: from, to: to, limit: to - from + 1)
+        return Set(samples.map(\.ts))
+    }
+
     /// Reads HR and R-R for a time range back out, wrapped so it can leave the actor.
     public func readBack(from: Int, to: Int, limit: Int = 100_000) async throws -> SampleBatch {
         let store = try await openStore()
@@ -65,6 +77,8 @@ public final class LiveCollector {
     public private(set) var discovered: [DiscoveredStrap] = []
     public private(set) var pairedAt: Int?
     public private(set) var lastWriteError: String?
+    /// The strap was handed to another device on purpose; nothing reconnects until `reclaim`.
+    public private(set) var isReleased = false
 
     @ObservationIgnored private let source: any HeartDataSource
     @ObservationIgnored private let sink: any SampleSink
@@ -134,6 +148,20 @@ public final class LiveCollector {
         } catch {
             lastWriteError = "Couldn't erase the forgotten strap's samples: \(error)"
         }
+    }
+
+    /// Saves what's collected, then lets go of the strap while staying paired.
+    public func release() async {
+        isReleased = true
+        source.releaseStrap()
+        await flush()
+        heartRate = nil
+        lastSampleAt = nil
+    }
+
+    public func reclaim() {
+        isReleased = false
+        source.reclaimStrap()
     }
 
     /// Writes everything collected since the last flush. A failed write is kept and retried next time.

@@ -13,6 +13,9 @@ final class FakeSource: HeartDataSource {
     func stopScan() { scanning = false }
     func connect(to strap: UUID) { connectedTo = strap; rememberedStrap = strap }
     func forget() { rememberedStrap = nil }
+    var released = false
+    func releaseStrap() { released = true }
+    func reclaimStrap() { released = false }
     func send(_ event: HeartSourceEvent) { onEvent?(event) }
 }
 
@@ -38,6 +41,24 @@ struct LiveCollectorTests {
         collector.pair(with: strap)
         #expect(source.connectedTo == strap)
         #expect(collector.pairedAt == 5_000)
+    }
+
+    @Test func handingTheStrapOverSavesFirstAndKeepsThePairing() async {
+        let source = FakeSource()
+        let sink = FakeSink()
+        let collector = LiveCollector(source: source, sink: sink, defaults: makeDefaults(), now: { 0 })
+        collector.pair(with: UUID())
+        source.send(.link(.connected))
+        source.send(.measurement(HeartRateMeasurement(bpm: 64, rrMs: [], contact: .detected), at: 20))
+        await collector.release()
+        #expect(source.released)
+        #expect(collector.isReleased)
+        #expect(collector.isPaired)
+        #expect(collector.heartRate == nil)
+        #expect(await sink.written.flatMap(\.hr).map(\.bpm) == [64])
+        collector.reclaim()
+        #expect(!source.released)
+        #expect(!collector.isReleased)
     }
 
     @Test func liveStateFollowsSourceEvents() {

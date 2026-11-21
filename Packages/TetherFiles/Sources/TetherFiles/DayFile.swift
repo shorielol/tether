@@ -28,6 +28,7 @@ public enum DayFile {
         header.set("strap_battery_pct", record.strapBatteryPct)
         if let today = record.today { writeToday(today, into: &header) }
         if let night = record.night { writeNight(night, into: &header) }
+        if !record.macSpans.isEmpty { header["mac_spans"] = spans(record.macSpans) }
 
         var out = "---\n" + header.lines.joined(separator: "\n") + "\n---\n\n# \(record.day)\n\n"
         out += summary(record).map { "- \($0)" }.joined(separator: "\n") + "\n"
@@ -64,7 +65,7 @@ public enum DayFile {
             header.set("coverage_window_start", coverage.window.lowerBound)
             header.set("coverage_window_end", coverage.window.upperBound)
             header.set("coverage_captured_s", coverage.capturedSeconds)
-            header["coverage_gaps"] = coverage.gaps.map { "\($0.lowerBound)-\($0.upperBound)" }.joined(separator: ";")
+            header["coverage_gaps"] = spans(coverage.gaps)
         }
     }
 
@@ -83,6 +84,18 @@ public enum DayFile {
         header.set("resp_rate", night.respRate)
         header.set("charge", night.charge)
         header.set("rest", night.rest)
+    }
+
+    private static func spans(_ ranges: [ClosedRange<Int>]) -> String {
+        ranges.map { "\($0.lowerBound)-\($0.upperBound)" }.joined(separator: ";")
+    }
+
+    private static func readSpans(_ raw: String?, key: String) throws -> [ClosedRange<Int>] {
+        try (raw ?? "").split(separator: ";").map { pair -> ClosedRange<Int> in
+            let ends = pair.split(separator: "-").compactMap { Int($0) }
+            guard ends.count == 2, ends[0] <= ends[1] else { throw ReadError.badValue(key) }
+            return ends[0]...ends[1]
+        }
     }
 
     private static func summary(_ record: DayRecord) -> [String] {
@@ -127,7 +140,8 @@ public enum DayFile {
         guard let day = header["day"], let savedAt = try header.int("saved_at") else { throw ReadError.badValue("day") }
         let blocks = csvBlocks(Array(lines[(end + 1)...]))
         return DayRecord(day: day, savedAt: savedAt, strapBatteryPct: try header.int("strap_battery_pct"),
-                         today: try readToday(header, blocks), night: try readNight(header, blocks))
+                         today: try readToday(header, blocks), night: try readNight(header, blocks),
+                         macSpans: try readSpans(header["mac_spans"], key: "mac_spans"))
     }
 
     private static func readToday(_ header: Header, _ blocks: [String: [[String]]]) throws -> TodaySnapshot? {
@@ -145,11 +159,7 @@ public enum DayFile {
         var coverage: CoverageReport?
         if let cStart = try header.int("coverage_window_start"), let cEnd = try header.int("coverage_window_end"),
            let captured = try header.int("coverage_captured_s") {
-            let gaps = try (header["coverage_gaps"] ?? "").split(separator: ";").map { pair -> ClosedRange<Int> in
-                let ends = pair.split(separator: "-").compactMap { Int($0) }
-                guard ends.count == 2, ends[0] <= ends[1] else { throw ReadError.badValue("coverage_gaps") }
-                return ends[0]...ends[1]
-            }
+            let gaps = try readSpans(header["coverage_gaps"], key: "coverage_gaps")
             coverage = CoverageReport(window: cStart...cEnd, capturedSeconds: captured, gaps: gaps)
         }
         let zones = (header["zone_minutes"] ?? "").split(separator: ",").compactMap { Int($0) }

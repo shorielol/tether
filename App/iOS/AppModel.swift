@@ -18,6 +18,9 @@ final class AppModel {
     private static let scoringInterval: TimeInterval = 15 * 60
     private static let syncInterval: TimeInterval = 15 * 60
     private static let folderKey = "tether.folder"
+    private static let macSpansKey = "tether.macSpans"
+    /// Mac spans older than this are no longer written into any day file.
+    private static let macSpanKeepSeconds = 3 * 86_400
     /// The morning pass looks for a finished night from 04:00 until this hour.
     private static let morningEndHour = 16
     private static let morningTick: Duration = .seconds(60)
@@ -274,10 +277,12 @@ final class AppModel {
             await scoreNights()
         }
         let records = await dayRecords(pairedAt: pairedAt, profile: profile)
+        let strapName = StandardHRSource.rememberedName()
         do {
             try await Task.detached(priority: .utility) {
                 try folder.withAccess {
-                    try folder.write(ProfileFile.write(profile: profile, pairedAt: pairedAt), to: ProfileFile.relativePath)
+                    try folder.write(ProfileFile.write(profile: profile, pairedAt: pairedAt, strapName: strapName),
+                                     to: ProfileFile.relativePath)
                     for record in records {
                         try folder.write(DayFile.write(record), to: DayFile.relativePath(day: record.day))
                     }
@@ -295,13 +300,26 @@ final class AppModel {
         for file in folder.withAccess({ folder.pendingInbox() }) {
             do {
                 let text = try folder.withAccess { try folder.read(url: file) }
-                imported += try await InboxImporter.importFile(text, into: sink, notBefore: cutoff)
+                let result = try await InboxImporter.importFile(text, into: sink, notBefore: cutoff)
+                imported += result.samples
+                if let span = result.span { rememberMacSpan(span) }
                 try folder.withAccess { try folder.markImported(file) }
             } catch {
                 folderError = "Couldn't import \(file.lastPathComponent) from your Mac: \(error.localizedDescription)"
             }
         }
         return imported
+    }
+
+    private var macSpans: [ClosedRange<Int>] {
+        let stored = UserDefaults.standard.array(forKey: Self.macSpansKey) as? [[Int]] ?? []
+        return stored.compactMap { $0.count == 2 && $0[0] <= $0[1] ? $0[0]...$0[1] : nil }
+    }
+
+    private func rememberMacSpan(_ span: ClosedRange<Int>) {
+        let cutoff = Int(Date().timeIntervalSince1970) - Self.macSpanKeepSeconds
+        let kept = MacSpans.dropping(MacSpans.adding(span, to: macSpans), before: cutoff)
+        UserDefaults.standard.set(kept.map { [$0.lowerBound, $0.upperBound] }, forKey: Self.macSpansKey)
     }
 
     /// Yesterday and today, each with what Today showed and the night that ended on it.
@@ -325,7 +343,8 @@ final class AppModel {
             let night = latestNight?.day == key ? latestNight : nights.first { $0.day == key }
             guard snapshot != nil || night != nil else { continue }
             records.append(DayRecord(day: key, savedAt: now, strapBatteryPct: offset == 0 ? collector.batteryPercent : nil,
-                                     today: snapshot, night: night))
+                                     today: snapshot, night: night,
+                                     macSpans: MacSpans.within(macSpans, day: dayStart...(dayStart + 86_399))))
         }
         return records
     }

@@ -39,6 +39,15 @@ public protocol HeartDataSource: AnyObject {
     func stopScan()
     func connect(to strap: UUID)
     func forget()
+    /// Lets go of the strap but stays paired, so another device can hold it. No reconnecting until `reclaimStrap`.
+    func releaseStrap()
+    /// Goes back to a standing connection request for the remembered strap.
+    func reclaimStrap()
+}
+
+public extension HeartDataSource {
+    func releaseStrap() {}
+    func reclaimStrap() {}
 }
 
 /// Reads Heart Rate Measurement (0x2A37), Battery Level (0x2A19) and Firmware Revision (0x2A26).
@@ -63,6 +72,7 @@ public final class StandardHRSource: NSObject, HeartDataSource {
     private var peripheral: CBPeripheral?
     private var rrUnit: RRUnit = .bleSpec
     private var wantsScan = false
+    private var isReleased = false
 
     public init(restoreIdentifier: String? = "tether.central", defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -72,6 +82,11 @@ public final class StandardHRSource: NSObject, HeartDataSource {
         if let restoreIdentifier { options[CBCentralManagerOptionRestoreIdentifierKey] = restoreIdentifier }
         #endif
         central = CBCentralManager(delegate: self, queue: nil, options: options)
+    }
+
+    /// The name of the strap this device last paired with, e.g. "WHOOP NAKV".
+    public static func rememberedName(defaults: UserDefaults = .standard) -> String? {
+        defaults.string(forKey: strapNameKey)
     }
 
     public var rememberedStrap: UUID? {
@@ -97,7 +112,19 @@ public final class StandardHRSource: NSObject, HeartDataSource {
         reconnectRemembered(state: .connecting)
     }
 
+    public func releaseStrap() {
+        isReleased = true
+        if let peripheral { central.cancelPeripheralConnection(peripheral) }
+        emit(.link(.idle))
+    }
+
+    public func reclaimStrap() {
+        isReleased = false
+        reconnectRemembered(state: .connecting)
+    }
+
     public func forget() {
+        isReleased = false
         if let peripheral { central.cancelPeripheralConnection(peripheral) }
         peripheral = nil
         defaults.removeObject(forKey: Self.strapKey)
@@ -106,7 +133,7 @@ public final class StandardHRSource: NSObject, HeartDataSource {
     }
 
     private func reconnectRemembered(state: LinkState) {
-        guard central.state == .poweredOn, let id = rememberedStrap,
+        guard !isReleased, central.state == .poweredOn, let id = rememberedStrap,
               let known = central.retrievePeripherals(withIdentifiers: [id]).first else { return }
         adopt(known)
         central.connect(known, options: nil)   // standing request: completes whenever the strap is in range
@@ -163,14 +190,14 @@ extension StandardHRSource: @MainActor CBCentralManagerDelegate {
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
                                            error: (any Error)?) {
-        guard rememberedStrap == peripheral.identifier else { return }
+        guard !isReleased, rememberedStrap == peripheral.identifier else { return }
         emit(.link(.reconnecting))
         central.connect(peripheral, options: nil)
     }
 
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
                                            error: (any Error)?) {
-        guard rememberedStrap == peripheral.identifier else { return }
+        guard !isReleased, rememberedStrap == peripheral.identifier else { return }
         emit(.link(.reconnecting))
         central.connect(peripheral, options: nil)
     }

@@ -59,8 +59,8 @@ struct InboxImportTests {
                                    rr: [RRInterval(ts: 95, rrMs: 850, ord: 0, seq: 0),
                                         RRInterval(ts: 111, rrMs: 830, ord: 0, seq: 1)])
         let sink = RecordingSink()
-        let count = try await InboxImporter.importFile(text, into: sink, notBefore: 100)
-        #expect(count == 2)
+        let result = try await InboxImporter.importFile(text, into: sink, notBefore: 100)
+        #expect(result.samples == 2)
         let written = await sink.written
         #expect(written.flatMap(\.hr).map(\.ts) == [110])
         #expect(written.flatMap(\.rr).map(\.ts) == [111])
@@ -68,9 +68,10 @@ struct InboxImportTests {
 
     @Test func aFileWithNothingNewWritesNothing() async throws {
         let sink = RecordingSink()
-        let count = try await InboxImporter.importFile(InboxFile.write(hr: [HRSample(ts: 5, bpm: 60)], rr: []),
-                                                       into: sink, notBefore: 100)
-        #expect(count == 0)
+        let result = try await InboxImporter.importFile(InboxFile.write(hr: [HRSample(ts: 5, bpm: 60)], rr: []),
+                                                        into: sink, notBefore: 100)
+        #expect(result.samples == 0)
+        #expect(result.span == nil)
         #expect(await sink.written.isEmpty)
     }
 }
