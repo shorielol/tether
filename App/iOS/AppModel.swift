@@ -43,6 +43,7 @@ final class AppModel {
     @ObservationIgnored private var lastSyncAt: Date?
     @ObservationIgnored private var lastMorningPassAt: Date?
     @ObservationIgnored private var morningLoop: Task<Void, Never>?
+    @ObservationIgnored private let recordingCard = RecordingActivityController()
     private(set) var profile: UserProfile?
     private(set) var onboarded: Bool
     private(set) var phoneCharging: Bool?
@@ -126,6 +127,7 @@ final class AppModel {
         lastScoredAt = nil
         todayLoop = Task { [weak self] in
             while !Task.isCancelled {
+                await self?.refreshRecordingCard(canStart: true)
                 await self?.refreshToday()
                 await self?.scoreNights()
                 await self?.syncFolder()
@@ -198,6 +200,7 @@ final class AppModel {
         #endif
         morningLoop = Task { [weak self] in
             while !Task.isCancelled {
+                await self?.refreshRecordingCard(canStart: false)
                 await self?.morningPass()
                 try? await Task.sleep(for: Self.morningTick)
             }
@@ -235,7 +238,42 @@ final class AppModel {
         }
     }
 
+    // MARK: - Recording card (Live Activity)
+
+    /// Starts the lock-screen card when the strap is linked and the app is on screen (`canStart`), and
+    /// updates it every pass. Ends it when the strap is forgotten.
+    func refreshRecordingCard(canStart: Bool) async {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "tether.debugRecording") {
+            if canStart { recordingCard.startIfNeeded(Self.debugRecordingStatus, at: .now.addingTimeInterval(-71 * 60)) }
+            return
+        }
+        #endif
+        guard collector.isPaired else {
+            if recordingCard.startedAt != nil { await recordingCard.end() }
+            return
+        }
+        let now = Date()
+        if canStart, collector.link == .connected, recordingCard.startedAt == nil {
+            recordingCard.startIfNeeded(recordingStatus(since: now, now: now, captured: 0), at: now)
+        }
+        guard let start = recordingCard.startedAt else { return }
+        await collector.flush()
+        let from = Int(start.timeIntervalSince1970), to = Int(now.timeIntervalSince1970)
+        let captured = (try? await sink.hrSeconds(from: from, to: to).count) ?? 0
+        await recordingCard.update(recordingStatus(since: start, now: now, captured: captured))
+    }
+
+    private func recordingStatus(since start: Date, now: Date, captured: Int) -> RecordingStatus {
+        RecordingStatus.make(heartRate: collector.heartRate, link: .init(collector.link), startedAt: start, now: now,
+                             capturedSeconds: captured, strapBattery: collector.batteryPercent)
+    }
+
     #if DEBUG
+    /// `-tether.debugRecording YES` shows the card with fixture numbers, to check it without a strap.
+    private static let debugRecordingStatus = RecordingStatus(heartRate: 57, link: .solid, missedMinutes: 0,
+                                                              coveragePercent: 100, strapBattery: 58, isNight: true)
+
     /// `-tether.debugMorning YES` fills the widgets with fixture numbers, to check them without a strap.
     private func publishDebugMorning() {
         let snapshot = MorningSnapshot(wakeDay: WakeDay.key(for: .now), savedAt: Int(Date().timeIntervalSince1970),
