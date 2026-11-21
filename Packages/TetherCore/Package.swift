@@ -9,12 +9,13 @@ let package = Package(
         .package(path: "../WhoopProtocol"),
         .package(path: "../WhoopStore"),
         .package(path: "../StrandAnalytics"),
+        .package(path: "../TetherSnapshot"),
     ],
     targets: [
         .target(
             name: "TetherCore",
-            dependencies: ["WhoopProtocol", "WhoopStore", "StrandAnalytics"]
+            dependencies: ["WhoopProtocol", "WhoopStore", "StrandAnalytics", "TetherSnapshot"]
         ),
-        .testTarget(name: "TetherCoreTests", dependencies: ["TetherCore"]),
+        .testTarget(name: "TetherCoreTests", dependencies: ["TetherCore", "TetherSnapshot"]),
     ]
 )
