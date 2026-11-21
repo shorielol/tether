@@ -48,6 +48,10 @@ struct TabScreen<Content: View>: View {
                 .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
+        #if DEBUG
+        // Screenshot runs pass `-tether.debugAnchor bottom` to open a tab scrolled to the end.
+        .defaultScrollAnchor(UserDefaults.standard.string(forKey: "tether.debugAnchor") == "bottom" ? .bottom : .top)
+        #endif
         .background(TetherBrand.ink)
     }
 }

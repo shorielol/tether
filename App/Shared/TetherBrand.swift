@@ -16,6 +16,20 @@ enum TetherBrand {
     static let track = Color.white.opacity(0.10)
     /// Text on an ember button. White on ember fails contrast; this dark brown passes.
     static let onEmber = Color(red: 26 / 255, green: 14 / 255, blue: 6 / 255)
+
+    /// Zones ramp Dusk → Bone → Ember: lightness and hue both change, and there's no red/green.
+    static func zone(_ number: Int) -> Color {
+        switch number {
+        case 1: dusk
+        case 2: Color(red: 187 / 255, green: 188 / 255, blue: 231 / 255)
+        case 3: bone
+        case 4: Color(red: 244 / 255, green: 180 / 255, blue: 140 / 255)
+        case 5: ember
+        default: track
+        }
+    }
+
+    static let zoneNames = ["Below zones", "Easy", "Steady", "Aerobic", "Threshold", "Max"]
 }
 
 /// The one tinted glass button per screen: ember glass with dark text.

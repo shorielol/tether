@@ -10,8 +10,14 @@ import UserNotifications
 final class AppModel {
     private static let onboardedKey = "tether.onboarded"
     private static let expiryReminderId = "tether.expiry"
+    /// One day at one sample a second, with headroom for R-R (more than one beat a second).
+    private static let dayReadLimit = 250_000
 
     let collector: LiveCollector
+    private let sink: WhoopStoreSink
+    /// Today's analytics from stored samples, refreshed every 30 s while the app is open.
+    private(set) var today: TodaySnapshot?
+    @ObservationIgnored private var todayLoop: Task<Void, Never>?
     private(set) var profile: UserProfile?
     private(set) var onboarded: Bool
     private(set) var phoneCharging: Bool?
@@ -21,6 +27,7 @@ final class AppModel {
 
     init(defaults: UserDefaults = .standard) {
         let sink = WhoopStoreSink(path: Self.storePath())
+        self.sink = sink
         collector = LiveCollector(source: StandardHRSource(), sink: sink, defaults: defaults)
         profile = UserProfile.load(from: defaults)
         onboarded = defaults.bool(forKey: Self.onboardedKey)
@@ -62,6 +69,51 @@ final class AppModel {
         content.body = "The install runs out tomorrow. Put your iPhone on the same Wi-Fi as your Mac, or plug it in, so the Mac can renew it."
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(60, reminder.timeIntervalSinceNow), repeats: false)
         try? await center.add(UNNotificationRequest(identifier: Self.expiryReminderId, content: content, trigger: trigger))
+    }
+
+    /// Live heart rate for the hero card.
+    var liveHeartRate: Int? {
+        #if DEBUG
+        if let fixture = DebugFixture.liveHeartRate { return fixture }
+        #endif
+        return collector.heartRate
+    }
+
+    func startTodayUpdates() {
+        #if DEBUG
+        if DebugFixture.isOn {
+            let profile = profile
+            Task { today = await Task.detached { DebugFixture.today(profile: profile) }.value }
+            return
+        }
+        #endif
+        todayLoop?.cancel()
+        todayLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshToday()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    func stopTodayUpdates() {
+        todayLoop?.cancel()
+        todayLoop = nil
+    }
+
+    /// Reads today's samples (from midnight, or from pairing if later) and recomputes off the main actor.
+    func refreshToday() async {
+        guard let pairedAt = collector.pairedAt else { today = nil; return }
+        let now = Int(Date().timeIntervalSince1970)
+        let start = max(Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970), pairedAt)
+        guard start < now else { return }
+        await collector.flush()
+        guard let batch = try? await sink.readBack(from: start, to: now, limit: Self.dayReadLimit) else { return }
+        let profile = profile
+        today = await Task.detached(priority: .utility) {
+            TodayAnalytics.compute(hr: batch.streams.hr, rr: batch.streams.rr, profile: profile,
+                                   window: start...now, now: now)
+        }.value
     }
 
     func refreshDeviceState() {

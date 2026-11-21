@@ -9,13 +9,26 @@ struct TodayView: View {
             ScreenHeader(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)), title: "Today") {
                 if model.collector.isPaired { LivePill() }
             }
-            ChargeCard(progress: model.baseline)
-            HStack(spacing: 14) {
-                NotYet(title: "Sleep", detail: "Your first night shows here the morning after.").card()
-                NotYet(title: "Effort", detail: "Builds through the day once you're recording.").card()
+            if let today = model.today, !today.isEmpty {
+                LiveHeroCard(today: today, liveBPM: model.liveHeartRate)
+                HStack(alignment: .top, spacing: 14) {
+                    EffortCard(today: today)
+                    CaloriesCard(today: today)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                HeartRateDayCard(today: today)
+                ZonesCard(today: today)
+                StressCard(today: today)
+                CoverageRow(today: today)
+            } else if model.collector.isPaired {
+                NotYet(title: "Collecting your first minutes",
+                       detail: "Live numbers, Effort and your heart-rate chart appear here within a minute of recording.")
+                    .card()
+            } else {
+                NotYet(title: "Not recording yet", detail: "Pair your strap from the Strap tab to start your history.")
+                    .card()
             }
-            .fixedSize(horizontal: false, vertical: true)
-            RecordingCard()
+            BaselineRow(progress: model.baseline)
         }
     }
 }
@@ -38,50 +51,32 @@ private struct LivePill: View {
     }
 
     private func live(_ collector: LiveCollector) -> String {
-        let hr = collector.heartRate.map { "\($0) bpm" } ?? "Live"
-        return collector.batteryPercent.map { "\(hr) · \($0)%" } ?? hr
+        collector.batteryPercent.map { "Live · \($0)%" } ?? "Live"
     }
 }
 
-private struct ChargeCard: View {
+/// Charge and sleep need nights; until then they take one quiet row instead of the whole screen.
+private struct BaselineRow: View {
     let progress: BaselineProgress
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
             ZStack {
-                Circle().stroke(TetherBrand.track, lineWidth: 11)
+                Circle().stroke(TetherBrand.track, lineWidth: 5)
                 Circle()
                     .trim(from: 0, to: Double(progress.scoredNights) / Double(BaselineProgress.chargeNights))
-                    .stroke(TetherBrand.ember.opacity(0.45), style: .init(lineWidth: 11, lineCap: .round))
+                    .stroke(TetherBrand.ember, style: .init(lineWidth: 5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                VStack(spacing: 0) {
-                    Text("\(min(progress.scoredNights, BaselineProgress.chargeNights))/\(BaselineProgress.chargeNights)")
-                        .font(.title2.bold()).monospacedDigit()
-                    Text("nights").font(.caption).foregroundStyle(TetherBrand.sub)
-                }
             }
-            .frame(width: 104, height: 104)
-            .accessibilityElement()
-            .accessibilityLabel("\(progress.scoredNights) of \(BaselineProgress.chargeNights) baseline nights recorded")
-            NotYet(title: progress.chargeLabel,
-                   detail: "Charge compares each night with your own baseline, so it waits until it has one.")
+            .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(progress.chargeLabel) · \(progress.scoredNights)/\(BaselineProgress.chargeNights)")
+                    .font(.subheadline.weight(.semibold))
+                Text("Sleep and Charge are scored each morning from the night before.")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+            }
         }
-        .card()
-    }
-}
-
-private struct RecordingCard: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        if let pairedAt = model.collector.pairedAt {
-            let since = Date(timeIntervalSince1970: TimeInterval(pairedAt))
-            NotYet(title: "Recording since \(since.formatted(date: .abbreviated, time: .shortened))",
-                   detail: "Heart rate and R-R are saved on this phone every 30 seconds.")
-                .card()
-        } else {
-            NotYet(title: "Not recording yet", detail: "Pair your strap from the Strap tab to start your history.")
-                .card()
-        }
+        .card(padding: 14)
+        .accessibilityElement(children: .combine)
     }
 }
