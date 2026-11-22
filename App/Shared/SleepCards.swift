@@ -153,7 +153,7 @@ struct ChargeCard: View {
             ZStack {
                 Circle().stroke(TetherBrand.track, lineWidth: 12)
                 Circle().trim(from: 0, to: charge / 100)
-                    .stroke(TetherBrand.ember, style: .init(lineWidth: 12, lineCap: .round))
+                    .stroke(TetherBrand.charge(zone), style: .init(lineWidth: 12, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 0) {
                     Text("\(Int(charge.rounded()))").font(.system(size: 34, weight: .bold)).monospacedDigit()
@@ -163,7 +163,12 @@ struct ChargeCard: View {
             .frame(width: 112, height: 112)
             .accessibilityElement(children: .combine)
             VStack(alignment: .leading, spacing: 8) {
-                Text(headline).font(.headline)
+                HStack(spacing: 6) {
+                    Circle().fill(TetherBrand.charge(zone)).frame(width: 8, height: 8)
+                    Text(zone.name).font(.subheadline.weight(.semibold)).foregroundStyle(TetherBrand.charge(zone))
+                }
+                .accessibilityElement(children: .combine)
+                Text(zone.advice).font(.headline)
                 ForEach(drivers.prefix(3)) { driver in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: driver.deltaPoints >= 0 ? "arrow.up.right" : "arrow.down.right")
@@ -178,13 +183,7 @@ struct ChargeCard: View {
         .card()
     }
 
-    private var headline: String {
-        switch charge {
-        case 67...: "Ready to push"
-        case 34..<67: "Ready for a normal day"
-        default: "Take it easier today"
-        }
-    }
+    private var zone: ChargeZone { ChargeZone(charge: charge) }
 }
 
 struct RecentNightsCard: View {

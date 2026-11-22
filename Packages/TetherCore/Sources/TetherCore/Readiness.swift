@@ -63,6 +63,44 @@ public enum BedtimeCheck {
     }
 }
 
+/// Charge read as three bands, so the number comes with what to do about it. The bands are
+/// Green 67–100, Yellow 34–66 and Red 0–33, judged on the rounded score the app shows.
+public enum ChargeZone: Sendable, Equatable, CaseIterable {
+    case green, yellow, red
+
+    public init(charge: Double) {
+        switch Int(charge.rounded()) {
+        case 67...: self = .green
+        case 34...: self = .yellow
+        default: self = .red
+        }
+    }
+
+    public var name: String {
+        switch self {
+        case .green: "Green"
+        case .yellow: "Yellow"
+        case .red: "Red"
+        }
+    }
+
+    public var advice: String {
+        switch self {
+        case .green: "Ready for a harder day"
+        case .yellow: "Keep it steady"
+        case .red: "Rest and recover"
+        }
+    }
+
+    public var range: ClosedRange<Int> {
+        switch self {
+        case .green: 67...100
+        case .yellow: 34...66
+        case .red: 0...33
+        }
+    }
+}
+
 /// How many scored nights the personal baselines still need.
 public struct BaselineProgress: Sendable, Equatable {
     /// NOOP's own thresholds: Charge scores from `minNightsSeed` nights, the baseline is trusted at `minNightsTrust`.

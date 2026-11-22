@@ -1,4 +1,5 @@
 import SwiftUI
+import TetherCore
 
 /// Colour tokens from the approved Brand board (dark first).
 enum TetherBrand {
@@ -30,6 +31,16 @@ enum TetherBrand {
     }
 
     static let zoneNames = ["Below zones", "Easy", "Steady", "Aerobic", "Threshold", "Max"]
+
+    /// Charge's three zones. Checked against the dark surfaces for contrast and colour-blind
+    /// separation; always shown with the zone's name, never colour alone.
+    static func charge(_ zone: ChargeZone) -> Color {
+        switch zone {
+        case .green: good
+        case .yellow: headsUp
+        case .red: Color(red: 1, green: 112 / 255, blue: 136 / 255)
+        }
+    }
 }
 
 /// The one tinted glass button per screen: ember glass with dark text.
