@@ -87,6 +87,26 @@ struct StrapHistorySyncTests {
         #expect(collector.historyRescoreFrom == nil)
     }
 
+    @Test func theAlarmGoesOutOverTheDataLinkAndTheStrapsAnswerLands() {
+        let source = FakeDataLinkSource()
+        let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())
+        source.send(.dataLink(.ready))
+        collector.alarm.set(hour: 7, minute: 0)
+        let sent = source.commands.map { $0[10] }
+        #expect(sent.contains(StrapCommandPolicy.setClock))
+        #expect(sent.last == StrapCommandPolicy.setAlarm)
+        source.send(.strapFrame(puffinCommandFrame(cmd: StrapCommandPolicy.setAlarm, seq: 3, payload: [1, 1], type: 38)))
+        guard case .set = collector.alarm.status else {
+            Issue.record("expected the alarm to be set, got \(collector.alarm.status)")
+            return
+        }
+        source.send(.dataLink(.unavailable))
+        collector.alarm.turnOff()
+        #expect(source.commands.last?[10] != StrapCommandPolicy.cancelAlarm)
+        source.send(.dataLink(.ready))
+        #expect(source.commands.contains { $0[10] == StrapCommandPolicy.cancelAlarm })
+    }
+
     @Test func finishingRemembersWhenItSyncedAcrossARelaunch() {
         let source = FakeDataLinkSource()
         let defaults = makeDefaults()

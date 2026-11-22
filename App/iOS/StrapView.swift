@@ -13,6 +13,7 @@ struct StrapView: View {
                                                                      : "WHOOP 5.0 · heart-rate link", title: "Strap")
             if model.collector.isPaired {
                 LiveCard()
+                AlarmCard(alarm: model.collector.alarm)
                 HistoryCard()
             } else {
                 VStack(alignment: .leading, spacing: 14) {

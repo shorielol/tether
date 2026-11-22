@@ -104,6 +104,8 @@ public final class LiveCollector {
     public private(set) var lastHistoryOutcome: StrapHistoryOutcome?
     /// Called when a history sync ends, so the app can rescore the days it filled in.
     @ObservationIgnored public var onHistorySynced: ((StrapHistoryOutcome) -> Void)?
+    /// The strap's silent alarm, set over the data link.
+    @ObservationIgnored public let alarm: AlarmKeeper
 
     @ObservationIgnored private let source: any HeartDataSource
     @ObservationIgnored private let sink: any SampleSink
@@ -130,6 +132,10 @@ public final class LiveCollector {
         self.sink = sink
         self.defaults = defaults
         self.now = now
+        alarm = AlarmKeeper(defaults: defaults, now: now) { [source] frame in
+            guard StrapCommandPolicy.allows(frame) else { return }
+            source.sendStrapCommand(frame)
+        }
         if defaults.object(forKey: Self.pairedAtKey) != nil {
             let saved = defaults.integer(forKey: Self.pairedAtKey)
             pairedAt = saved
@@ -195,6 +201,7 @@ public final class LiveCollector {
     /// Called every few minutes while the data link is up, so history keeps arriving without a reconnect.
     func historyHeartbeat() {
         guard dataLink == .ready else { return }
+        alarm.tick()
         syncHistoryIfDue()
     }
 
@@ -347,6 +354,7 @@ public final class LiveCollector {
             firmware = version
         case .dataLink(let state):
             dataLink = state
+            alarm.linkChanged(ready: state == .ready)
             if state == .ready {
                 syncHistoryIfDue()
                 startHistoryHeartbeat()
@@ -356,6 +364,7 @@ public final class LiveCollector {
                 historyWentQuiet()
             }
         case .strapFrame(let frame):
+            if alarm.receive(frame) { return }
             guard let history else { return }
             history.receive(frame)
             armHistoryIdle()
