@@ -105,7 +105,8 @@ public enum DayScorer {
                         history: [DailyMetric], tzOffsetSeconds: Int) -> AnalyticsEngine.DayResult {
         let sortedHR = hr.sorted { $0.ts < $1.ts }
         let sortedRR = rr.sorted { $0.ts < $1.ts }
-        let sleep = SleepStager.hrOnlySessions(day: day, hr: sortedHR, rr: sortedRR, resp: [])
+        let fragments = SleepStager.hrOnlySessions(day: day, hr: sortedHR, rr: sortedRR, resp: [])
+        let sleep = joiningTheNight(fragments, day: day, hr: sortedHR, rr: sortedRR, tzOffsetSeconds: tzOffsetSeconds)
         return AnalyticsEngine.analyzeDay(
             day: day, hr: sortedHR, rr: sortedRR,
             profile: .init(weightKg: profile.weightKg, heightCm: Double(profile.heightCm),
@@ -114,6 +115,39 @@ public enum DayScorer {
             maxHROverride: Double(profile.maxHR),
             tzOffsetSeconds: tzOffsetSeconds,
             providedSleep: sleep)
+    }
+
+    /// Swaps the fragments of one night for the whole night when `NightFinder` sees a longer span
+    /// than any single fragment. The span is staged from heart rate and R-R like any other night, so
+    /// wakes inside it still count as awake; resting HR and HRV are left for the engine to fill.
+    static func joiningTheNight(_ fragments: [SleepSession], day: String, hr: [HRSample], rr: [RRInterval],
+                                tzOffsetSeconds: Int) -> [SleepSession] {
+        guard let dayStart = dayStart(day, tzOffsetSeconds: tzOffsetSeconds),
+              let span = NightFinder.night(hr: hr, dayStart: dayStart) else { return fragments }
+        let longest = fragments.map { $0.end - $0.start }.max() ?? 0
+        guard span.upperBound - span.lowerBound > longest else { return fragments }
+        let stages = SleepStagerV2.stageSession(start: span.lowerBound, end: span.upperBound, grav: [],
+                                                hr: hr, rr: rr, resp: [])
+        guard !stages.isEmpty else { return fragments }
+        let awake = stages.filter { $0.stage == "wake" }.reduce(0) { $0 + $1.end - $1.start }
+        let inBed = span.upperBound - span.lowerBound
+        let night = SleepSession(start: span.lowerBound, end: span.upperBound,
+                                 efficiency: Double(inBed - awake) / Double(inBed), stages: stages,
+                                 restingHR: nil, avgHRV: nil, hrOnly: true)
+        let others = fragments.filter { $0.end <= span.lowerBound || $0.start >= span.upperBound }
+        return others + [night]
+    }
+
+    /// Local midnight for a "yyyy-MM-dd" key, as unix seconds.
+    static func dayStart(_ day: String, tzOffsetSeconds: Int) -> Int? {
+        let parts = day.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        guard let utcMidnight = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else {
+            return nil
+        }
+        return Int(utcMidnight.timeIntervalSince1970) - tzOffsetSeconds
     }
 
     /// Personal HRV and resting-HR baselines from earlier nights, oldest first.
@@ -180,6 +214,15 @@ extension WhoopStoreSink {
         let result = DayScorer.analyze(day: day, hr: hr, rr: rr, profile: profile, history: history,
                                        tzOffsetSeconds: tzOffsetSeconds)
         _ = try await store.upsertDailyMetrics([result.daily], deviceId: Self.deviceId)
+        // Sessions are keyed by their start, so a re-score that finds a different start would leave the
+        // old one behind. Clear this day's earlier sessions first; hand-edited ones stay.
+        let fresh = Set(result.cachedSleep.map(\.startTs))
+        let earlier = try await store.sleepSessions(deviceId: Self.deviceId, from: window.lowerBound,
+                                                    to: window.upperBound + 86_400, limit: 1_000)
+        for session in earlier where !session.userEdited && !fresh.contains(session.startTs)
+            && DayScorer.dayKey(dayStart: session.endTs, timeZone: timeZone) == day {
+            _ = try await store.deleteSleepSession(deviceId: Self.deviceId, startTs: session.startTs)
+        }
         if !result.cachedSleep.isEmpty {
             _ = try await store.upsertSleepSessions(result.cachedSleep, deviceId: Self.deviceId)
         }
