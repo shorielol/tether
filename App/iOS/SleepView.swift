@@ -14,12 +14,19 @@ struct SleepView: View {
                 }
                 HypnogramCard(night: night)
                 RecentNightsCard(nights: model.nights)
+                if let breakdown = ScoreBreakdown.sleep(night) {
+                    BreakdownCard(title: "How you got to \(DayLine.duration(breakdown.total)) asleep",
+                                  startTitle: "In bed", startDetail: "from falling asleep to waking up",
+                                  totalTitle: "Asleep", unit: "", breakdown: breakdown,
+                                  footnote: "Awake counts every stretch your heart rate and movement say you were up, even ones too short to remember.",
+                                  format: DayLine.duration)
+                }
             } else {
                 NotYet(title: "No nights yet",
                        detail: "Wear the strap to bed with the phone charging nearby. Your night is scored when you open Tether in the morning.")
                     .card()
             }
-            HowItsWorkedOut(text: "Sleep is found from your heart rate settling and staying low. Stages are estimated from heart rate and its beat-to-beat changes, so they're labelled as estimates; your strap's motion joins in a later update. Asleep is the time between falling asleep and waking, minus the minutes you were awake. Your normal is the middle half of your earlier nights.")
+            HowItsWorkedOut(text: "Sleep is found from your heart rate settling and staying low. Stages are estimated from heart rate, its beat-to-beat changes and, when the strap has sent it, your movement, so they're labelled as estimates. Asleep is the time between falling asleep and waking, minus the minutes you were awake. Your normal is the middle half of your earlier nights.")
         }
         .navigationTitle("Sleep")
         .navigationBarTitleDisplayMode(.large)

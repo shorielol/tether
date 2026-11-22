@@ -141,6 +141,60 @@ public struct ScoreBreakdown: Sendable, Equatable {
         return ScoreBreakdown(start: shown(startScore, decimals: 0), steps: steps, total: previous, decimals: 0)
     }
 
+    /// Time asleep (minutes) as a running total: time in bed, minus the stretches awake, plus any sleep
+    /// outside the main stretch. Each subtotal is rounded to the minute so the lines add up.
+    public static func sleep(_ night: NightSummary) -> ScoreBreakdown? {
+        guard let start = night.sleepStart, let end = night.sleepEnd, end > start,
+              let asleep = night.totalSleepMin else { return nil }
+        let inBed = Double(end - start) / 60
+        let awake = Double(night.stages.filter { $0.kind == .wake }.reduce(0) { $0 + $1.end - $1.start }) / 60
+        let staged = Double(night.stages.reduce(0) { $0 + $1.end - $1.start }) / 60
+        let unstaged = max(0, inBed - staged)
+        let moves: [(name: String, value: String, compare: String, subtotal: Double)] = [
+            ("Awake in the night", "\(night.stages.filter { $0.kind == .wake }.count) times", "taken off",
+             inBed - awake),
+            ("Not read", "gaps with no heart rate", "taken off", inBed - awake - unstaged),
+            ("Other sleep that night", "a separate stretch", "added on", asleep),
+        ]
+        var previous = inBed.rounded()
+        var steps: [Step] = []
+        for move in moves {
+            let rounded = move.subtotal.rounded()
+            let points = rounded - previous
+            if points != 0 || (move.name == "Awake in the night" && awake > 0) {
+                // Only the last line can go either way: sleep the scorer found outside the main stretch adds
+                // on; a total below the stretch (it trimmed something) is said as such, not as "added".
+                let trimmed = move.name == "Other sleep that night" && points < 0
+                steps.append(Step(name: trimmed ? "Trimmed by the scorer" : move.name,
+                                  valueText: trimmed ? "not counted as sleep" : move.value,
+                                  compareText: trimmed ? "taken off" : move.compare,
+                                  weightPercent: 0, points: points))
+            }
+            previous = rounded
+        }
+        return ScoreBreakdown(start: inBed.rounded(), steps: steps, total: previous, decimals: 0)
+    }
+
+    /// One hour's stress (0–3) as a running total: an hour exactly at the day's calm level reads 1.5, then
+    /// heart rate and HRV move it along the scorer's own curve.
+    static func stressHour(meanHR: Double, rmssd: Double?, reference: DaytimeStress.Reference) -> ScoreBreakdown {
+        let hrOnly = DaytimeStress.rawScore(hr: meanHR, meanHR: reference.hr, sdHR: reference.sdHR,
+                                            rmssd: nil, meanRMSSD: nil, sdRMSSD: 0)
+        let both = DaytimeStress.rawScore(hr: meanHR, meanHR: reference.hr, sdHR: reference.sdHR,
+                                          rmssd: rmssd, meanRMSSD: reference.rmssd, sdRMSSD: reference.sdRMSSD)
+        let start = shown(DaytimeStress.squash(0), decimals: 1)
+        let afterHR = shown(DaytimeStress.squash(hrOnly), decimals: 1)
+        let total = shown(DaytimeStress.squash(both), decimals: 1)
+        var steps = [Step(name: "Heart rate", valueText: "\(whole(meanHR)) bpm",
+                          compareText: "your calm \(whole(reference.hr)) bpm", weightPercent: 0,
+                          points: shown(afterHR - start, decimals: 1))]
+        if let rmssd, let calm = reference.rmssd, reference.sdRMSSD > 0.0001 {
+            steps.append(Step(name: "HRV", valueText: "\(whole(rmssd)) ms", compareText: "your calm \(whole(calm)) ms",
+                              weightPercent: 0, points: shown(total - afterHR, decimals: 1)))
+        }
+        return ScoreBreakdown(start: start, steps: steps, total: total, decimals: 1)
+    }
+
     /// Names for Effort's five heart-rate bands, easiest first.
     public static let effortBandNames = ["Light", "Moderate", "Hard", "Very hard", "Flat out"]
 

@@ -33,9 +33,16 @@ struct BreakdownCard: View {
     let unit: String
     let breakdown: ScoreBreakdown
     let footnote: String
-    let whatIf: () -> Void
+    /// Opens the what-if, or nil when this score has none.
+    var whatIf: (() -> Void)? = nil
     /// Steps worth showing; a step that moved nothing and carried nothing is left out.
     var hidesEmptySteps = false
+    /// How values read, when not a plain number (Sleep shows "6h 13m").
+    var format: ((Double) -> String)? = nil
+    /// A control under the title, such as Stress's hour picker.
+    var accessory: AnyView? = nil
+    /// False where a higher number is worse (Stress), so a rise shows as a heads-up rather than good.
+    var upIsGood = true
 
     static var opensWhatIfForScreenshots: Bool {
         #if DEBUG
@@ -51,24 +58,27 @@ struct BreakdownCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.headline).padding(.bottom, 10)
-            row(title: startTitle, detail: startDetail) { Text(Self.text(breakdown.start, breakdown.decimals)) }
+            Text(title).font(.headline).padding(.bottom, accessory == nil ? 10 : 4)
+            if let accessory { accessory.padding(.bottom, 6) }
+            row(title: startTitle, detail: startDetail) { Text(show(breakdown.start)) }
             ForEach(shownSteps) { step in
                 Divider().overlay(TetherBrand.cardStroke)
-                row(title: step.name, detail: "\(step.valueText), \(step.compareText) · counts \(step.weightPercent)%") {
+                row(title: step.name, detail: detail(step)) {
                     Text(signed(step.points))
-                        .foregroundStyle(step.points > 0 ? TetherBrand.good : step.points < 0 ? TetherBrand.headsUp : TetherBrand.sub)
+                        .foregroundStyle(tint(step.points))
                 }
             }
             Divider().overlay(TetherBrand.text.opacity(0.5))
-            row(title: totalTitle, detail: nil) { Text("\(Self.text(breakdown.total, breakdown.decimals))\(unit)") }
+            row(title: totalTitle, detail: nil) { Text("\(show(breakdown.total))\(unit)") }
             Text(footnote)
                 .font(.caption).foregroundStyle(TetherBrand.sub)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
-            Button("What if…", action: whatIf)
-                .buttonStyle(.bordered).tint(TetherBrand.text)
-                .padding(.top, 12)
+            if let whatIf {
+                Button("What if…", action: whatIf)
+                    .buttonStyle(.bordered).tint(TetherBrand.text)
+                    .padding(.top, 12)
+            }
         }
         .card()
     }
@@ -93,8 +103,22 @@ struct BreakdownCard: View {
         .accessibilityElement(children: .combine)
     }
 
+    private func tint(_ points: Double) -> Color {
+        guard points != 0 else { return TetherBrand.sub }
+        return (points > 0) == upIsGood ? TetherBrand.good : TetherBrand.headsUp
+    }
+
+    private func show(_ value: Double) -> String {
+        format?(value) ?? Self.text(value, breakdown.decimals)
+    }
+
+    private func detail(_ step: ScoreBreakdown.Step) -> String {
+        let base = "\(step.valueText), \(step.compareText)"
+        return step.weightPercent > 0 ? "\(base) · counts \(step.weightPercent)%" : base
+    }
+
     private func signed(_ points: Double) -> String {
-        let magnitude = Self.text(abs(points), breakdown.decimals)
+        let magnitude = show(abs(points))
         return points > 0 ? "+\(magnitude)" : points < 0 ? "−\(magnitude)" : "0"
     }
 }

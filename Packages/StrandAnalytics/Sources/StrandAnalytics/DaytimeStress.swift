@@ -198,6 +198,15 @@ public enum DaytimeStress {
         }
     }
 
+    // tether: the reference each hour was scored against, so Tether can show the maths. Read-only.
+    /// The calm point and spread each scored hour was compared with.
+    public struct Reference: Equatable, Sendable {
+        public let hr: Double
+        public let sdHR: Double
+        public let rmssd: Double?
+        public let sdRMSSD: Double
+    }
+
     /// The full daytime read: the hourly timeline plus the sustained-high summary.
     public struct Result: Equatable, Sendable {
         /// Waking-hour timeline, earliest → latest. Hours with no signal carry `level == nil`.
@@ -238,11 +247,14 @@ public enum DaytimeStress {
         /// `highStressMinutes`, `dayMean` and `peak` all stay on the non-overlapping `hours`, because
         /// overlapping windows would count the same minute more than once.
         public let timeline: [HourPoint]
+        // tether: what the hours were scored against; nil for an empty read.
+        public let reference: Reference?
 
         public init(hours: [HourPoint], sustainedHigh: Bool, sustainedRun: Int,
                     dayMean: Double?, peak: HourPoint?, activityMaskedHours: Int = 0,
                     highStressMinutes: Int = 0, hrOnlyFallback: Bool = false,
-                    timeline: [HourPoint]? = nil) {
+                    timeline: [HourPoint]? = nil, reference: Reference? = nil) {
+            self.reference = reference
             self.hours = hours
             self.timeline = timeline ?? hours
             self.sustainedHigh = sustainedHigh
@@ -279,7 +291,8 @@ public enum DaytimeStress {
 
     /// Combined autonomic z-score. HR-up and HRV-down both push it positive — the SAME
     /// directionality as the daily score (RHR up = stress, HRV down = stress).
-    static func rawScore(hr: Double?, meanHR: Double?, sdHR: Double,
+    // tether: public so Tether can show an hour's maths with the scorer's own formula.
+    public static func rawScore(hr: Double?, meanHR: Double?, sdHR: Double,
                          rmssd: Double?, meanRMSSD: Double?, sdRMSSD: Double) -> Double {
         var sum = 0.0
         if let h = hr, let m = meanHR, sdHR > 0.0001 {
@@ -293,7 +306,8 @@ public enum DaytimeStress {
 
     /// Logistic squash of the raw z-sum onto 0–3 (baseline 0 → 1.5). Identical to
     /// StressMath.squash, so an hourly point shares the daily score's scale and bands.
-    static func squash(_ raw: Double) -> Double {
+    // tether: public, as rawScore.
+    public static func squash(_ raw: Double) -> Double {
         let s = 3.0 / (1.0 + exp(-raw))
         return min(max(s, 0), 3)
     }
@@ -613,7 +627,8 @@ public enum DaytimeStress {
         return Result(hours: points, sustainedHigh: sustained, sustainedRun: run,
                       dayMean: dayMean, peak: peak, activityMaskedHours: activityMaskedHours,
                       highStressMinutes: highStressMinutes, hrOnlyFallback: hrOnlyFallback,
-                      timeline: timeline)
+                      timeline: timeline,
+                      reference: refHR.map { Reference(hr: $0, sdHR: sdHR, rmssd: refRMSSD, sdRMSSD: sdRMSSD) })
     }
 
     // MARK: - Helpers

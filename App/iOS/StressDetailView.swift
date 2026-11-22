@@ -21,6 +21,7 @@ struct StressDetailView: View {
                 timeline
                 split
                 hours
+                if detail.hours.contains(where: { $0.breakdown != nil }) { StressMathsCard(detail: detail) }
                 howItsRead
             }
         }
@@ -204,7 +205,7 @@ struct StressDetailView: View {
     }
 
     private var howItsRead: some View {
-        HowItsWorkedOut(text: "Each hour's heart rate and HRV are compared with the calmest part of your own day. Usual is a normal hour for you; high means heart rate up and HRV down together. It needs about 5 minutes of steady heart rate in an hour between 6 AM and 10 PM. Your strap's motion isn't used here yet, so a workout or a brisk walk can still read as high.")
+        HowItsWorkedOut(text: "Each hour's heart rate and HRV are compared with the calmest part of your own day. Usual is a normal hour for you; high means heart rate up and HRV down together. It needs about 5 minutes of steady heart rate in an hour between 6 AM and 10 PM. When your strap has sent its movement, hours you spent moving are left out rather than read as stress; without it, a workout or a brisk walk can still read as high.")
     }
 
     /// Each point reads a full hour, so it's drawn at the middle of that hour.

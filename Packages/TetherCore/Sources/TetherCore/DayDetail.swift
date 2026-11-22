@@ -49,6 +49,8 @@ public struct StressDetail: Sendable, Equatable {
         public let wasMoving: Bool
         /// Minutes in the hour that have heart rate.
         public let recordedMinutes: Int
+        /// How the hour's level was worked out, for scored hours.
+        public var breakdown: ScoreBreakdown? = nil
         public var band: StressBand? { level.map(StressBand.init(level:)) }
         public var id: Int { hour }
     }
@@ -64,6 +66,14 @@ public struct StressDetail: Sendable, Equatable {
     /// How many of the latest scored hours in a row were high, when that run is long enough to flag.
     public let sustainedHighHours: Int
     public let movingHours: Int
+    /// The day's calm level that every hour is compared with.
+    public var calm: Calm? = nil
+
+    /// The calmer end of your waking hours today: what an hour at stress 1.5 looks like.
+    public struct Calm: Sendable, Equatable {
+        public let heartRate: Int
+        public let hrv: Int?
+    }
 
     public var dayBand: StressBand? { dayLevel.map(StressBand.init(level:)) }
 
@@ -82,7 +92,10 @@ public struct StressDetail: Sendable, Equatable {
             Hour(hour: point.hour, startTs: point.startTs, level: point.level,
                  meanHR: point.meanHR.map { Int($0.rounded()) }, hrv: point.rmssd.map { Int($0.rounded()) },
                  wasMoving: point.maskedForActivity,
-                 recordedMinutes: recordedMinutes(recorded, from: point.startTs))
+                 recordedMinutes: recordedMinutes(recorded, from: point.startTs),
+                 breakdown: point.level == nil ? nil : result.reference.flatMap { reference in
+                     point.meanHR.map { ScoreBreakdown.stressHour(meanHR: $0, rmssd: point.rmssd, reference: reference) }
+                 })
         }
         func minutes(in band: StressBand) -> Int {
             hours.filter { $0.band == band }.reduce(0) { $0 + $1.recordedMinutes }
@@ -94,7 +107,8 @@ public struct StressDetail: Sendable, Equatable {
             dayLevel: result.dayMean,
             peak: result.peak.flatMap { peak in hours.first { $0.startTs == peak.startTs } },
             sustainedHighHours: result.sustainedHigh ? result.sustainedRun : 0,
-            movingHours: result.activityMaskedHours)
+            movingHours: result.activityMaskedHours,
+            calm: result.reference.map { Calm(heartRate: Int($0.hr.rounded()), hrv: $0.rmssd.map { Int($0.rounded()) }) })
     }
 
     /// Distinct minutes with a reading inside the hour that starts at `start`. The hour is the local

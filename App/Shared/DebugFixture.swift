@@ -90,7 +90,8 @@ enum DebugFixture {
             let inputs = index == 5 ? fixtureChargeInputs : nil
             return NightSummary(
                 day: DayScorer.dayKey(dayStart: dayStart), sleepStart: bed, sleepEnd: wake,
-                totalSleepMin: Double(wake - bed) / 60 * 0.92, efficiency: 0.92, deepMin: 85, remMin: 117,
+                totalSleepMin: Double(stages.filter { $0.kind != .wake }.reduce(0) { $0 + $1.end - $1.start }) / 60,
+                efficiency: 0.92, deepMin: 85, remMin: 117,
                 lightMin: 175, disturbances: 3, restingHR: 52 - index % 2, hrv: 54 + Double(index * 2),
                 respRate: 14.6, charge: inputs?.charge() ?? (hasCharge ? [58, 71, 64][index - 3] : nil),
                 rest: hasCharge ? 78 : nil,
