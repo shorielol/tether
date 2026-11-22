@@ -74,12 +74,12 @@ public struct StressDetail: Sendable, Equatable {
     public static func compute(hr: [HRSample], rr: [RRInterval], tzOffsetSeconds: Int) -> StressDetail {
         guard !hr.isEmpty else { return .empty }
         let result = DaytimeStress.analyze(hr: hr, rr: rr, tzOffsetSeconds: tzOffsetSeconds, includeTimeline: true)
-        let minutesByHour = recordedMinutes(hr)
+        let recorded = Set(hr.map { $0.ts / 60 })
         let hours = result.hours.map { point in
             Hour(hour: point.hour, startTs: point.startTs, level: point.level,
                  meanHR: point.meanHR.map { Int($0.rounded()) }, hrv: point.rmssd.map { Int($0.rounded()) },
                  wasMoving: point.maskedForActivity,
-                 recordedMinutes: minutesByHour[point.startTs / DaytimeStress.bucketSeconds] ?? 0)
+                 recordedMinutes: recordedMinutes(recorded, from: point.startTs))
         }
         func minutes(in band: StressBand) -> Int {
             hours.filter { $0.band == band }.reduce(0) { $0 + $1.recordedMinutes }
@@ -94,10 +94,11 @@ public struct StressDetail: Sendable, Equatable {
             movingHours: result.activityMaskedHours)
     }
 
-    /// Distinct minutes with a reading, keyed by hour bucket.
-    static func recordedMinutes(_ hr: [HRSample]) -> [Int: Int] {
-        let minutes = Set(hr.map { $0.ts / 60 })
-        return Dictionary(grouping: minutes) { $0 * 60 / DaytimeStress.bucketSeconds }.mapValues(\.count)
+    /// Distinct minutes with a reading inside the hour that starts at `start`. The hour is the local
+    /// one DaytimeStress scored, which in a half-hour time zone isn't a UTC hour.
+    static func recordedMinutes(_ minutes: Set<Int>, from start: Int) -> Int {
+        let first = start / 60
+        return (first..<first + DaytimeStress.bucketSeconds / 60).count(where: minutes.contains)
     }
 }
 

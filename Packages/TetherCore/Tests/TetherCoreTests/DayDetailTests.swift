@@ -67,6 +67,15 @@ struct StressDetailTests {
         #expect(detail.dayBand != nil)
     }
 
+    /// India is UTC+5:30, so a local hour straddles two UTC hours. Recording stops at 15:47 local.
+    @Test func minutesFollowTheLocalHourInAHalfHourTimeZone() throws {
+        let india = 19_800
+        let stream = SyntheticDay.streams([(1.5, 9.5 + 47.0 / 60, 66, 30)])
+        let detail = StressDetail.compute(hr: stream.hr, rr: stream.rr, tzOffsetSeconds: india)
+        #expect(try #require(detail.hours.first { $0.hour == 10 }).recordedMinutes == 60)
+        #expect(try #require(detail.hours.first { $0.hour == 15 }).recordedMinutes == 47)
+    }
+
     @Test func anEmptyDayHasNothingToSay() {
         let detail = StressDetail.compute(hr: [], rr: [], tzOffsetSeconds: 0)
         #expect(detail.hours.isEmpty)
