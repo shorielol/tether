@@ -75,6 +75,10 @@ final class AppModel {
             if fresh { Task { await self.markNotifier.ask(about: mark, offering: self.markLabels.recent) } }
         }
         markNotifier.onAnswer = { [weak self] mark, label in self?.setLabel(label, for: mark) }
+        collector.onStressNudge = { [weak self] in
+            guard let self else { return }
+            Task { await self.markNotifier.suggestBreather() }
+        }
         UNUserNotificationCenter.current().delegate = markNotifier
         folderName = defaults.data(forKey: Self.folderKey).flatMap(SharedFolder.resolve)?.folder.url.lastPathComponent
         UIDevice.current.isBatteryMonitoringEnabled = true

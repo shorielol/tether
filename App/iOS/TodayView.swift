@@ -3,7 +3,7 @@ import TetherCore
 
 /// The screens a Today card opens.
 enum TodayDetail: String, Hashable {
-    case stress, effort, recovery, sleep, marks
+    case stress, effort, recovery, sleep, marks, breathe
 }
 
 struct TodayView: View {
@@ -47,6 +47,8 @@ struct TodayView: View {
             SleepView()
         case .marks:
             MarksView()
+        case .breathe:
+            BreatheView()
         }
     }
 

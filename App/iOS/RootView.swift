@@ -34,6 +34,7 @@ struct MainTabs: View {
         case "sleep": Destination(section: .today, path: [.sleep])
         case "strap": Destination(section: .today, strap: true)
         case "marks": Destination(section: .today, path: [.marks])
+        case "breathe": Destination(section: .today, path: [.stress, .breathe])
         default: nil
         }
     }

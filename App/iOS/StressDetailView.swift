@@ -5,6 +5,7 @@ import TetherCore
 /// Stress in depth: today's overall band, the half-hourly line, time in each band, and every waking
 /// hour with its heart rate and HRV.
 struct StressDetailView: View {
+    @Environment(AppModel.self) private var model
     let detail: StressDetail
 
     @State private var selected: Date?
@@ -24,6 +25,7 @@ struct StressDetailView: View {
                 if detail.hours.contains(where: { $0.breakdown != nil }) { StressMathsCard(detail: detail) }
                 howItsRead
             }
+            calmDown
         }
         .navigationTitle("Stress")
         .navigationBarTitleDisplayMode(.large)
@@ -202,6 +204,28 @@ struct StressDetailView: View {
         } else {
             Text("Not enough data").font(.caption).foregroundStyle(TetherBrand.sub)
         }
+    }
+
+    /// Stress alerts and the breathing exercise.
+    private var calmDown: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            NavigationLink(value: TodayDetail.breathe) {
+                Label("Breathe for a minute", systemImage: "wind").font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .tint(TetherBrand.text)
+            Divider().overlay(TetherBrand.cardStroke)
+            Toggle(isOn: Binding(get: { model.collector.stressAlerts }, set: { model.collector.stressAlerts = $0 })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tell me when stress climbs").font(.subheadline.weight(.semibold))
+                    Text("When your HRV drops and stays down for a minute while you're at rest, your phone suggests a breather. At most every 15 minutes, never 10 PM–7 AM, and only while your phone hears the strap.")
+                        .font(.caption).foregroundStyle(TetherBrand.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(TetherBrand.ember)
+        }
+        .card()
     }
 
     private var howItsRead: some View {

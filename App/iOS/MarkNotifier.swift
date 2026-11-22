@@ -34,6 +34,18 @@ final class MarkNotifier: NSObject, UNUserNotificationCenterDelegate {
         try? await center.add(UNNotificationRequest(identifier: "tether.mark.\(mark)", content: content, trigger: nil))
     }
 
+    /// Suggests a minute of slow breathing; tapping it opens the breathing screen.
+    func suggestBreather() async {
+        let center = UNUserNotificationCenter.current()
+        guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Stress is climbing"
+        content.body = "Your HRV just dropped while you're at rest. A minute of slow breathing can help."
+        content.userInfo = ["open": "tether://breathe"]
+        try? await center.add(UNNotificationRequest(identifier: "tether.stress.\(Int(Date.now.timeIntervalSince1970))",
+                                                    content: content, trigger: nil))
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .list]
@@ -42,6 +54,10 @@ final class MarkNotifier: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
         let content = response.notification.request.content
+        if let link = content.userInfo["open"] as? String, let url = URL(string: link) {
+            await MainActor.run { _ = UIApplication.shared.open(url) }
+            return
+        }
         guard content.categoryIdentifier == Self.category, let mark = content.userInfo["mark"] as? Int else { return }
         let action = response.actionIdentifier
         let typed = (response as? UNTextInputNotificationResponse)?.userText

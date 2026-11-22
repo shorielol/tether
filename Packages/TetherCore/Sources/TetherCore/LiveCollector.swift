@@ -95,6 +95,17 @@ public final class LiveCollector {
     /// The strap was handed to another device on purpose; nothing reconnects until `reclaim`.
     public private(set) var isReleased = false
     public private(set) var dataLink: StrapDataLink = .unavailable
+    /// Tell me when stress starts climbing (off unless turned on).
+    public var stressAlerts: Bool {
+        didSet {
+            defaults.set(stressAlerts, forKey: Self.stressAlertsKey)
+            nudger.enabled = stressAlerts
+        }
+    }
+    @ObservationIgnored private var nudger = StressNudger(enabled: false)
+    /// A sustained HRV dip at rest: time to suggest a breather.
+    @ObservationIgnored public var onStressNudge: (() -> Void)?
+    private static let stressAlertsKey = "tether.stress.alerts"
     public private(set) var isSyncingHistory = false
     /// When the last history sync ended (unix seconds), kept across launches.
     public private(set) var lastHistorySync: Int?
@@ -146,6 +157,8 @@ public final class LiveCollector {
         self.sink = sink
         self.defaults = defaults
         self.now = now
+        stressAlerts = defaults.bool(forKey: Self.stressAlertsKey)
+        nudger.enabled = defaults.bool(forKey: Self.stressAlertsKey)
         alarm = AlarmKeeper(defaults: defaults, now: now) { [source] frame in
             guard StrapCommandPolicy.allows(frame) else { return }
             source.sendStrapCommand(frame)
@@ -398,6 +411,10 @@ public final class LiveCollector {
             lastSampleAt = ts
             batcher?.append(measurement, at: ts)
             watchForSurfacing(bpm: measurement.bpm, at: ts)
+            if nudger.add(rr: measurement.rrMs, heartRate: measurement.bpm, at: ts,
+                          tzOffsetSeconds: TimeZone.current.secondsFromGMT()) {
+                onStressNudge?()
+            }
         case .battery(let percent):
             batteryPercent = percent
         case .firmware(let version):
