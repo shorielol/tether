@@ -98,6 +98,9 @@ public final class LiveCollector {
     public private(set) var isSyncingHistory = false
     /// When the last history sync ended (unix seconds), kept across launches.
     public private(set) var lastHistorySync: Int?
+    /// The oldest moment the strap's history has filled in since the nights were last rescored, kept across
+    /// launches. Nights from that day on get scored again so minutes the phone missed count.
+    public private(set) var historyRescoreFrom: Int?
     public private(set) var lastHistoryOutcome: StrapHistoryOutcome?
     /// Called when a history sync ends, so the app can rescore the days it filled in.
     @ObservationIgnored public var onHistorySynced: ((StrapHistoryOutcome) -> Void)?
@@ -115,6 +118,7 @@ public final class LiveCollector {
 
     private static let pairedAtKey = "tether.pairedAt"
     private static let lastHistorySyncKey = "tether.history.lastSync"
+    private static let historyRescoreKey = "tether.history.rescoreFrom"
     /// A ready data link syncs on its own when the last sync is at least this old.
     public static let historySyncInterval = 30 * 60
     /// While the link stays up, how often to check whether a sync is due.
@@ -130,6 +134,9 @@ public final class LiveCollector {
             let saved = defaults.integer(forKey: Self.pairedAtKey)
             pairedAt = saved
             batcher = SampleBatcher(cutoff: OwnershipCutoff(pairedAt: saved))
+        }
+        if defaults.object(forKey: Self.historyRescoreKey) != nil {
+            historyRescoreFrom = defaults.integer(forKey: Self.historyRescoreKey)
         }
         if defaults.object(forKey: Self.lastHistorySyncKey) != nil {
             lastHistorySync = defaults.integer(forKey: Self.lastHistorySyncKey)
@@ -154,13 +161,30 @@ public final class LiveCollector {
                 guard StrapCommandPolicy.allows(frame) else { return }
                 self?.source.sendStrapCommand(frame)
             },
-            save: { streams in try await sink.writeHistory(SampleBatch(streams)) },
+            save: { [weak self] streams in
+                let rows = try await sink.writeHistory(SampleBatch(streams))
+                if let oldest = streams.hr.map(\.ts).min() { await self?.historyFilledIn(from: oldest) }
+                return rows
+            },
             now: now)
         session.onFinish = { [weak self] outcome in self?.finishHistory(outcome) }
         history = session
         isSyncingHistory = true
         session.start()
         armHistoryIdle()
+    }
+
+    private func historyFilledIn(from oldest: Int) {
+        let from = min(historyRescoreFrom ?? oldest, oldest)
+        historyRescoreFrom = from
+        defaults.set(from, forKey: Self.historyRescoreKey)
+    }
+
+    /// The nights from `from` on have been scored again. Older history that arrived meanwhile stays marked.
+    public func historyRescored(from: Int) {
+        guard let marked = historyRescoreFrom, marked >= from else { return }
+        historyRescoreFrom = nil
+        defaults.removeObject(forKey: Self.historyRescoreKey)
     }
 
     private func syncHistoryIfDue() {

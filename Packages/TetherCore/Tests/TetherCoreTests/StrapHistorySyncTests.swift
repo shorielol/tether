@@ -59,6 +59,34 @@ struct StrapHistorySyncTests {
         #expect(source.acks == 1)
     }
 
+    @Test func savedHistoryMarksHowFarBackTheNightsNeedRescoring() async {
+        let source = FakeDataLinkSource()
+        let defaults = makeDefaults()
+        let sink = FakeSink()
+        let collector = pairedCollector(source, sink, defaults: defaults)
+        #expect(collector.historyRescoreFrom == nil)
+        source.send(.dataLink(.ready))
+        await collector.receiveStrapFrames([HistoryFrames.start, HistoryFrames.record, HistoryFrames.end])
+        #expect(collector.historyRescoreFrom == HistoryFrames.recordTs)
+        let relaunched = LiveCollector(source: source, sink: sink, defaults: defaults, now: { now })
+        #expect(relaunched.historyRescoreFrom == HistoryFrames.recordTs)
+        relaunched.historyRescored(from: HistoryFrames.recordTs)
+        #expect(relaunched.historyRescoreFrom == nil)
+        #expect(LiveCollector(source: source, sink: sink, defaults: defaults, now: { now }).historyRescoreFrom == nil)
+    }
+
+    /// A rescore that began from a later point didn't cover older history that arrived meanwhile.
+    @Test func olderHistoryThanTheRescoreCoveredIsNotForgotten() async {
+        let source = FakeDataLinkSource()
+        let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())
+        source.send(.dataLink(.ready))
+        await collector.receiveStrapFrames([HistoryFrames.start, HistoryFrames.record, HistoryFrames.end])
+        collector.historyRescored(from: HistoryFrames.recordTs + 86_400)
+        #expect(collector.historyRescoreFrom == HistoryFrames.recordTs)
+        collector.historyRescored(from: HistoryFrames.recordTs - 60)
+        #expect(collector.historyRescoreFrom == nil)
+    }
+
     @Test func finishingRemembersWhenItSyncedAcrossARelaunch() {
         let source = FakeDataLinkSource()
         let defaults = makeDefaults()

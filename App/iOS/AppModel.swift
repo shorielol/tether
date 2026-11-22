@@ -214,19 +214,18 @@ final class AppModel {
         let now = Int(Date().timeIntervalSince1970)
         let today = calendar.startOfDay(for: .now)
         let alreadyScored = Set((try? await sink.scoredDays(from: "0000-01-01", to: "9999-12-31")) ?? [])
-        var day = calendar.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(pairedAt)))
+        let historyFrom = collector.historyRescoreFrom
         var latest: NightSummary?
-        while day <= today {
-            let dayStart = Int(day.timeIntervalSince1970)
-            let isRecent = calendar.dateComponents([.day], from: day, to: today).day ?? 0 <= 1
-            if isRecent || !alreadyScored.contains(DayScorer.dayKey(dayStart: dayStart)) {
-                if let scored = try? await sink.scoreDay(dayStart: dayStart, now: now, profile: profile) {
-                    latest = scored
-                }
+        var allScored = true
+        for dayStart in NightsToScore.days(pairedAt: pairedAt, now: now, scored: alreadyScored,
+                                           historyFrom: historyFrom, calendar: calendar) {
+            if let scored = try? await sink.scoreDay(dayStart: dayStart, now: now, profile: profile) {
+                latest = scored
+            } else {
+                allScored = false
             }
-            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-            day = next
         }
+        if let historyFrom, allScored { collector.historyRescored(from: historyFrom) }
         latestNight = latest
         let monthAgo = calendar.date(byAdding: .day, value: -30, to: today) ?? today
         nights = (try? await sink.nights(from: DayScorer.dayKey(dayStart: Int(monthAgo.timeIntervalSince1970)),
