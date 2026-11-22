@@ -1,5 +1,6 @@
 import CoreBluetooth
 import Foundation
+@preconcurrency import WhoopProtocol
 
 public enum LinkState: Equatable, Sendable {
     case bluetoothOff, unauthorized, unavailable, idle, scanning, connecting, connected, reconnecting
@@ -27,10 +28,25 @@ public enum HeartSourceEvent: Sendable {
     case measurement(HeartRateMeasurement, at: Int)
     case battery(percent: Int)
     case firmware(String)
+    /// The strap's own data link, which carries its stored history (skin temperature, motion, missed minutes).
+    case dataLink(StrapDataLink)
+    /// One complete frame from the data link.
+    case strapFrame([UInt8])
 }
 
-/// Anything that can feed heart data into Tether. v1 has one: the standard heart-rate service.
-/// A bonded WHOOP source (history, motion, temperature) can be added later beside it.
+/// The WHOOP 5 data link beside the standard heart-rate service.
+public enum StrapDataLink: Equatable, Sendable {
+    /// Not this strap, not this device, or not connected.
+    case unavailable
+    /// Waiting for the strap to accept the hello; iOS may show its pairing prompt.
+    case pairing
+    case ready
+    /// The hello was refused, for example the pairing prompt was cancelled.
+    case declined
+}
+
+/// Anything that can feed heart data into Tether: the standard heart-rate service, plus on iPhone
+/// the WHOOP 5 data link for the strap's stored history.
 @MainActor
 public protocol HeartDataSource: AnyObject {
     var onEvent: ((HeartSourceEvent) -> Void)? { get set }
@@ -43,11 +59,14 @@ public protocol HeartDataSource: AnyObject {
     func releaseStrap()
     /// Goes back to a standing connection request for the remembered strap.
     func reclaimStrap()
+    /// Writes one framed command to the strap's data link. Does nothing without one.
+    func sendStrapCommand(_ frame: [UInt8])
 }
 
 public extension HeartDataSource {
     func releaseStrap() {}
     func reclaimStrap() {}
+    func sendStrapCommand(_ frame: [UInt8]) {}
 }
 
 /// Reads Heart Rate Measurement (0x2A37), Battery Level (0x2A19) and Firmware Revision (0x2A26).
@@ -63,6 +82,12 @@ public final class StandardHRSource: NSObject, HeartDataSource {
     static let batteryLevel = CBUUID(string: "2A19")
     static let deviceInfoService = CBUUID(string: "180A")
     static let firmwareRevision = CBUUID(string: "2A26")
+    // tether: the WHOOP 5 data link, from NOOP's BLEManager (whoop5Service / whoop5CmdWriteChar / notify chars).
+    static let dataService = CBUUID(string: "fd4b0001-cce1-4033-93ce-002d5875f58a")
+    static let dataCommand = CBUUID(string: "fd4b0002-cce1-4033-93ce-002d5875f58a")
+    static let dataNotify: [CBUUID] = ["fd4b0003", "fd4b0004", "fd4b0005", "fd4b0007"].map {
+        CBUUID(string: "\($0)-cce1-4033-93ce-002d5875f58a")
+    }
 
     private let defaults: UserDefaults
     private static let strapKey = "tether.strap.id"
@@ -73,9 +98,18 @@ public final class StandardHRSource: NSObject, HeartDataSource {
     private var rrUnit: RRUnit = .bleSpec
     private var wantsScan = false
     private var isReleased = false
+    /// Only the iPhone opens the data link; the Mac stays on the standard heart-rate service.
+    private let opensDataLink: Bool
+    private var dataCommandChar: CBCharacteristic?
+    private var dataNotifyChars: [CBCharacteristic] = []
+    private var helloPending = false
+    private var dataLinkReady = false
+    private var reassembler = Reassembler(family: .whoop5)
 
-    public init(restoreIdentifier: String? = "tether.central", defaults: UserDefaults = .standard) {
+    public init(restoreIdentifier: String? = "tether.central", defaults: UserDefaults = .standard,
+                opensDataLink: Bool = false) {
         self.defaults = defaults
+        self.opensDataLink = opensDataLink
         super.init()
         var options: [String: Any] = [CBCentralManagerOptionShowPowerAlertKey: true]
         #if os(iOS)
@@ -152,6 +186,29 @@ public final class StandardHRSource: NSObject, HeartDataSource {
         onEvent?(event)
     }
 
+    public func sendStrapCommand(_ frame: [UInt8]) {
+        guard dataLinkReady, let peripheral, let dataCommandChar else { return }
+        peripheral.writeValue(Data(frame), for: dataCommandChar, type: .withResponse)
+    }
+
+    private func resetDataLink() {
+        let wasOpen = dataLinkReady || helloPending
+        dataCommandChar = nil
+        dataNotifyChars = []
+        helloPending = false
+        dataLinkReady = false
+        reassembler = Reassembler(family: .whoop5)
+        if wasOpen { emit(.dataLink(.unavailable)) }
+    }
+
+    /// Writes the hello once the command characteristic is known; iOS may show its pairing prompt.
+    private func openDataLink(on peripheral: CBPeripheral) {
+        guard opensDataLink, !helloPending, !dataLinkReady, let dataCommandChar else { return }
+        helloPending = true
+        emit(.dataLink(.pairing))
+        peripheral.writeValue(Data(WhoopCommandCode.clientHello), for: dataCommandChar, type: .withResponse)
+    }
+
     private func linkStateForPowerState(_ state: CBManagerState) -> LinkState? {
         switch state {
         case .poweredOff: .bluetoothOff
@@ -185,11 +242,14 @@ extension StandardHRSource: @MainActor CBCentralManagerDelegate {
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         adopt(peripheral)
         emit(.link(.connected))
-        peripheral.discoverServices([Self.heartRateService, Self.batteryService, Self.deviceInfoService])
+        var services = [Self.heartRateService, Self.batteryService, Self.deviceInfoService]
+        if opensDataLink { services.append(Self.dataService) }
+        peripheral.discoverServices(services)
     }
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
                                            error: (any Error)?) {
+        resetDataLink()
         guard !isReleased, rememberedStrap == peripheral.identifier else { return }
         emit(.link(.reconnecting))
         central.connect(peripheral, options: nil)
@@ -210,9 +270,29 @@ extension StandardHRSource: @MainActor CBPeripheralDelegate {
             case Self.heartRateService: peripheral.discoverCharacteristics([Self.measurement], for: service)
             case Self.batteryService: peripheral.discoverCharacteristics([Self.batteryLevel], for: service)
             case Self.deviceInfoService: peripheral.discoverCharacteristics([Self.firmwareRevision], for: service)
+            case Self.dataService: peripheral.discoverCharacteristics([Self.dataCommand] + Self.dataNotify, for: service)
             default: break
             }
         }
+    }
+
+    public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic,
+                                       error: (any Error)?) {
+        guard characteristic.uuid == Self.dataCommand, helloPending else { return }
+        helloPending = false
+        guard error == nil else {
+            emit(.dataLink(.declined))
+            return
+        }
+        dataNotifyChars.forEach { peripheral.setNotifyValue(true, for: $0) }
+    }
+
+    public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
+                                       error: (any Error)?) {
+        guard !dataLinkReady, !dataNotifyChars.isEmpty,
+              dataNotifyChars.allSatisfy(\.isNotifying) else { return }
+        dataLinkReady = true
+        emit(.dataLink(.ready))
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
@@ -224,9 +304,12 @@ extension StandardHRSource: @MainActor CBPeripheralDelegate {
                 peripheral.readValue(for: c)
                 if c.properties.contains(.notify) { peripheral.setNotifyValue(true, for: c) }
             case Self.firmwareRevision: peripheral.readValue(for: c)
+            case Self.dataCommand: dataCommandChar = c
+            case let uuid where Self.dataNotify.contains(uuid): dataNotifyChars.append(c)
             default: break
             }
         }
+        if service.uuid == Self.dataService { openDataLink(on: peripheral) }
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
@@ -244,6 +327,8 @@ extension StandardHRSource: @MainActor CBPeripheralDelegate {
             if let text = String(bytes: bytes, encoding: .utf8) {
                 emit(.firmware(text.trimmingCharacters(in: .controlCharacters.union(.whitespaces))))
             }
+        case let uuid where Self.dataNotify.contains(uuid):
+            reassembler.feed(bytes).forEach { emit(.strapFrame($0)) }
         default: break
         }
     }

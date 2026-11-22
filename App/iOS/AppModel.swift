@@ -24,6 +24,8 @@ final class AppModel {
     private static let macSpanKeepSeconds = 3 * 86_400
     /// The morning pass looks for a finished night from 04:00 until this hour.
     private static let morningEndHour = 16
+    /// In the morning window, pull the strap's history at most this often (seconds).
+    private static let morningHistoryInterval = 30 * 60
     private static let morningTick: Duration = .seconds(60)
 
     let collector: LiveCollector
@@ -58,10 +60,13 @@ final class AppModel {
     init(defaults: UserDefaults = .standard) {
         let sink = WhoopStoreSink(path: Self.storePath())
         self.sink = sink
-        collector = LiveCollector(source: StandardHRSource(), sink: sink, defaults: defaults)
+        collector = LiveCollector(source: StandardHRSource(opensDataLink: true), sink: sink, defaults: defaults)
         profile = UserProfile.load(from: defaults)
         onboarded = defaults.bool(forKey: Self.onboardedKey)
         collector.startAutoFlush(every: 30)
+        collector.onHistorySynced = { [weak self] outcome in
+            Task { await self?.historyArrived(outcome) }
+        }
         folderName = defaults.data(forKey: Self.folderKey).flatMap(SharedFolder.resolve)?.folder.url.lastPathComponent
         UIDevice.current.isBatteryMonitoringEnabled = true
         refreshDeviceState()
@@ -222,6 +227,19 @@ final class AppModel {
         publishMorning(night: latest, baselineNights: scoredNightCount)
     }
 
+    /// A history sync filled in minutes the phone missed: rescore the nights and today with them.
+    private func historyArrived(_ outcome: StrapHistoryOutcome) async {
+        switch outcome {
+        case .caughtUp(let rows) where rows > 0, .timedOut(let rows) where rows > 0:
+            lastScoredAt = nil
+            lastMorningPassAt = nil
+            await scoreNights()
+            await refreshToday()
+        default:
+            break
+        }
+    }
+
     // MARK: - Lock-screen widgets
 
     /// Runs for the app's whole life. Overnight the strap's Bluetooth stream keeps the app alive in the
@@ -250,6 +268,11 @@ final class AppModel {
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: now)
         guard (WakeDay.boundaryHour..<Self.morningEndHour).contains(hour) else { return }
+        // Mornings pull the night's history from the strap (skin temperature, motion, missed minutes).
+        // When it lands, historyArrived rescores with it.
+        if Int(now.timeIntervalSince1970) - (collector.lastHistorySync ?? 0) >= Self.morningHistoryInterval {
+            collector.syncHistoryNow()
+        }
         if let lastMorningPassAt, now.timeIntervalSince(lastMorningPassAt) < Self.scoringInterval { return }
         lastMorningPassAt = now
         let dayStart = Int(calendar.startOfDay(for: now).timeIntervalSince1970)

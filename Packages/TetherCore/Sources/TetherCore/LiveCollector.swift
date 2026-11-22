@@ -15,6 +15,13 @@ public protocol SampleSink: Sendable {
 
 public extension SampleSink {
     func hrSeconds(from: Int, to: Int) async throws -> Set<Int> { [] }
+
+    /// Saves a chunk of the strap's history and says how many rows it held.
+    func writeHistory(_ batch: SampleBatch) async throws -> Int {
+        try await write(batch)
+        let s = batch.streams
+        return s.hr.count + s.rr.count + s.skinTemp.count + s.gravity.count + s.resp.count + s.spo2.count
+    }
 }
 
 /// NOOP's `Streams` predates Swift 6 and isn't marked Sendable, but it is a struct of arrays of plain
@@ -79,6 +86,13 @@ public final class LiveCollector {
     public private(set) var lastWriteError: String?
     /// The strap was handed to another device on purpose; nothing reconnects until `reclaim`.
     public private(set) var isReleased = false
+    public private(set) var dataLink: StrapDataLink = .unavailable
+    public private(set) var isSyncingHistory = false
+    /// When the last history sync ended (unix seconds), kept across launches.
+    public private(set) var lastHistorySync: Int?
+    public private(set) var lastHistoryOutcome: StrapHistoryOutcome?
+    /// Called when a history sync ends, so the app can rescore the days it filled in.
+    @ObservationIgnored public var onHistorySynced: ((StrapHistoryOutcome) -> Void)?
 
     @ObservationIgnored private let source: any HeartDataSource
     @ObservationIgnored private let sink: any SampleSink
@@ -87,8 +101,13 @@ public final class LiveCollector {
     @ObservationIgnored private var batcher: SampleBatcher?
     @ObservationIgnored private var pending: [Streams] = []
     @ObservationIgnored private var autoFlush: Task<Void, Never>?
+    @ObservationIgnored private var history: StrapHistorySession?
+    @ObservationIgnored private var historyIdle: Task<Void, Never>?
 
     private static let pairedAtKey = "tether.pairedAt"
+    private static let lastHistorySyncKey = "tether.history.lastSync"
+    /// A ready data link syncs on its own when the last sync is at least this old.
+    public static let historySyncInterval = 3 * 3_600
 
     public init(source: any HeartDataSource, sink: any SampleSink, defaults: UserDefaults = .standard,
                 now: @escaping () -> Int = { Int(Date().timeIntervalSince1970) }) {
@@ -101,7 +120,66 @@ public final class LiveCollector {
             pairedAt = saved
             batcher = SampleBatcher(cutoff: OwnershipCutoff(pairedAt: saved))
         }
+        if defaults.object(forKey: Self.lastHistorySyncKey) != nil {
+            lastHistorySync = defaults.integer(forKey: Self.lastHistorySyncKey)
+        }
         source.onEvent = { [weak self] event in self?.handle(event) }
+    }
+
+    // MARK: Strap history
+
+    /// Starts a history sync now if the data link is ready and none is running.
+    public func syncHistoryNow() {
+        guard let pairedAt, dataLink == .ready, !isSyncingHistory, !isReleased else { return }
+        let sink = self.sink
+        let session = StrapHistorySession(
+            cutoff: OwnershipCutoff(pairedAt: pairedAt),
+            write: { [weak self] frame in self?.source.sendStrapCommand(frame) },
+            save: { streams in try await sink.writeHistory(SampleBatch(streams)) },
+            now: now)
+        session.onFinish = { [weak self] outcome in self?.finishHistory(outcome) }
+        history = session
+        isSyncingHistory = true
+        session.start()
+        armHistoryIdle()
+    }
+
+    private func syncHistoryIfDue() {
+        if let last = lastHistorySync, now() - last < Self.historySyncInterval { return }
+        syncHistoryNow()
+    }
+
+    /// The strap stopped sending mid-sync. The idle timer calls this; tests call it directly.
+    func historyWentQuiet() {
+        history?.idleTimeout()
+    }
+
+    /// Feeds frames and waits until the session has handled them. For tests and replays.
+    func receiveStrapFrames(_ frames: [[UInt8]]) async {
+        await history?.receiveAll(frames)
+    }
+
+    private func armHistoryIdle() {
+        historyIdle?.cancel()
+        historyIdle = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(StrapHistorySession.idleTimeoutSeconds))
+            guard !Task.isCancelled else { return }
+            self?.historyWentQuiet()
+        }
+    }
+
+    private func finishHistory(_ outcome: StrapHistoryOutcome) {
+        historyIdle?.cancel()
+        historyIdle = nil
+        history = nil
+        isSyncingHistory = false
+        lastHistoryOutcome = outcome
+        if outcome != .saveFailed {
+            let ended = now()
+            lastHistorySync = ended
+            defaults.set(ended, forKey: Self.lastHistorySyncKey)
+        }
+        onHistorySynced?(outcome)
     }
 
     public var isPaired: Bool { pairedAt != nil }
@@ -207,6 +285,13 @@ public final class LiveCollector {
             batteryPercent = percent
         case .firmware(let version):
             firmware = version
+        case .dataLink(let state):
+            dataLink = state
+            if state == .ready { syncHistoryIfDue() } else { historyWentQuiet() }
+        case .strapFrame(let frame):
+            guard let history else { return }
+            history.receive(frame)
+            armHistoryIdle()
         }
     }
 }

@@ -9,9 +9,11 @@ struct StrapView: View {
 
     var body: some View {
         TabScreen {
-            ScreenHeader(eyebrow: "WHOOP 5.0 · standard heart-rate link", title: "Strap")
+            ScreenHeader(eyebrow: model.collector.dataLink == .ready ? "WHOOP 5.0 · heart rate and history"
+                                                                     : "WHOOP 5.0 · heart-rate link", title: "Strap")
             if model.collector.isPaired {
                 LiveCard()
+                HistoryCard()
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     NotYet(title: "No strap paired",
@@ -109,6 +111,64 @@ private struct LiveCard: View {
     private func lastBeat(_ ts: Int?) -> String {
         guard let ts else { return "–" }
         return Date(timeIntervalSince1970: TimeInterval(ts)).formatted(date: .omitted, time: .shortened)
+    }
+}
+
+/// The strap's memory: skin temperature, motion and the minutes the phone missed. Synced on its own
+/// every few hours and each morning; this card says where it stands and can start one now.
+private struct HistoryCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let collector = model.collector
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Strap history").font(.headline)
+                Spacer()
+                if collector.isSyncingHistory { ProgressView().controlSize(.small) }
+            }
+            Text(status(collector)).font(.subheadline).foregroundStyle(TetherBrand.sub)
+                .fixedSize(horizontal: false, vertical: true)
+            if collector.lastHistoryOutcome == .saveFailed {
+                Text("Couldn't save the last sync. The strap keeps that data, so the next sync picks it up.")
+                    .font(.footnote).foregroundStyle(TetherBrand.headsUp)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if collector.dataLink == .ready, !collector.isSyncingHistory {
+                Button("Sync now") { collector.syncHistoryNow() }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .card()
+        .accessibilityElement(children: .combine)
+    }
+
+    private func status(_ collector: LiveCollector) -> String {
+        switch collector.dataLink {
+        case .pairing:
+            return "Accept the pairing request to let Tether read the strap's memory: skin temperature, motion and any minutes your phone missed."
+        case .declined:
+            return "Pairing wasn't accepted, so Tether records live heart rate only. It asks again the next time the strap reconnects."
+        case .unavailable:
+            return lastSynced(collector).map { "Last synced \($0). Syncs again when the strap is connected." }
+                ?? "Reads skin temperature, motion and missed minutes from the strap once it's connected."
+        case .ready:
+            if collector.isSyncingHistory { return "Reading the strap's memory…" }
+            return lastSynced(collector).map { "Up to date as of \($0)\(rowsNote(collector))." } ?? "Connected. First sync starting."
+        }
+    }
+
+    private func lastSynced(_ collector: LiveCollector) -> String? {
+        collector.lastHistorySync.map {
+            Date(timeIntervalSince1970: TimeInterval($0)).formatted(date: .omitted, time: .shortened)
+        }
+    }
+
+    private func rowsNote(_ collector: LiveCollector) -> String {
+        switch collector.lastHistoryOutcome {
+        case .caughtUp(let rows)?, .timedOut(let rows)?: rows > 0 ? " · \(rows.formatted()) readings added" : ""
+        default: ""
+        }
     }
 }
 
