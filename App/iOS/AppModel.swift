@@ -406,7 +406,7 @@ final class AppModel {
         }
         if let historyFrom, allScored { collector.historyRescored(from: historyFrom) }
         latestNight = latest
-        let monthAgo = calendar.date(byAdding: .day, value: -30, to: today) ?? today
+        let monthAgo = calendar.date(byAdding: .day, value: -Trends.longestRange, to: today) ?? today
         nights = (try? await sink.nights(from: DayScorer.dayKey(dayStart: Int(monthAgo.timeIntervalSince1970)),
                                          to: DayScorer.dayKey(dayStart: Int(today.timeIntervalSince1970)))) ?? nights
         scoredNightCount = (try? await sink.baselineNightCount()) ?? scoredNightCount

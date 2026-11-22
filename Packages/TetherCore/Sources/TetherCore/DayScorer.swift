@@ -57,12 +57,15 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
     public let skinTempDevC: Double?
     /// What Charge was worked out from, for a night scored just now. Stored nights don't keep it.
     public let chargeInputs: ChargeInputs?
+    /// That day's Effort (0–100), as scored with the night.
+    public let effort: Double?
     public var id: String { day }
 
     public init(day: String, sleepStart: Int?, sleepEnd: Int?, totalSleepMin: Double?, efficiency: Double?,
                 deepMin: Double?, remMin: Double?, lightMin: Double?, disturbances: Int?, restingHR: Int?,
                 hrv: Double?, respRate: Double?, charge: Double?, rest: Double?, drivers: [Driver], stages: [Stage],
-                skinTempC: Double? = nil, skinTempDevC: Double? = nil, chargeInputs: ChargeInputs? = nil) {
+                skinTempC: Double? = nil, skinTempDevC: Double? = nil, chargeInputs: ChargeInputs? = nil,
+                effort: Double? = nil) {
         self.day = day
         self.sleepStart = sleepStart
         self.sleepEnd = sleepEnd
@@ -82,6 +85,7 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
         self.skinTempC = skinTempC
         self.skinTempDevC = skinTempDevC
         self.chargeInputs = chargeInputs
+        self.effort = effort
     }
 }
 
@@ -213,7 +217,8 @@ public enum DayScorer {
             },
             stages: stages(main?.stages ?? []),
             skinTempC: daily.skinTempC, skinTempDevC: daily.skinTempDevC,
-            chargeInputs: ChargeInputs.from(daily: daily, rest: result.restScore, baselines: baselines(history: history)))
+            chargeInputs: ChargeInputs.from(daily: daily, rest: result.restScore, baselines: baselines(history: history)),
+            effort: daily.strain)
     }
 
     static func stages(_ segments: [StageSegment]) -> [NightSummary.Stage] {
@@ -233,7 +238,7 @@ public enum DayScorer {
             remMin: daily.remMin, lightMin: daily.lightMin, disturbances: daily.disturbances,
             restingHR: daily.restingHr, hrv: daily.avgHrv, respRate: daily.respRateBpm,
             charge: daily.recovery, rest: nil, drivers: [], stages: Self.stages(stages),
-            skinTempC: daily.skinTempC, skinTempDevC: daily.skinTempDevC)
+            skinTempC: daily.skinTempC, skinTempDevC: daily.skinTempDevC, effort: daily.strain)
     }
 }
 
