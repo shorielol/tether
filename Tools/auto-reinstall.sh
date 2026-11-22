@@ -42,8 +42,23 @@ expiry_epoch() {
   [ "$app" -lt "$widgets" ] && echo "$app" || echo "$widgets"
 }
 
+# What is actually on the phone, shared by every copy of this script (the Desktop repo and the
+# renewal clone). Without it each copy judged expiry by its own last build, so the clone reinstalled
+# its older code over a newer build from the Desktop (2026-11-22).
+STATE="$HOME/Library/Application Support/Tether/installed.txt"
+
+state_value() {
+  [ -f "$STATE" ] && sed -n "s/^$1=//p" "$STATE" | head -1
+}
+
+installed_expiry() {
+  local recorded
+  recorded=$(state_value expiry)
+  if [ -n "$recorded" ]; then echo "$recorded"; else expiry_epoch; fi
+}
+
 now=$(date +%s)
-left=$(( $(expiry_epoch) - now ))
+left=$(( $(installed_expiry) - now ))
 if [ "${1:-}" != "--force" ] && [ "$left" -gt $(( RENEW_DAYS * 86400 )) ]; then
   echo "ok: $(( left / 3600 )) h left, nothing to do"
   exit 0
@@ -52,6 +67,16 @@ fi
 if ! xcrun devicectl device info details --device "$DEVICE" >/dev/null 2>&1; then
   echo "phone not reachable; will retry"
   [ "$left" -lt 86400 ] && notify "Tether expires within a day and your iPhone isn't reachable. Join the same Wi-Fi as the Mac or plug it in."
+  exit 1
+fi
+
+# Never install older code than the phone already has. A copy that doesn't contain the installed
+# commit is behind, so it stops and says so instead of quietly undoing newer work.
+head_commit=$(git rev-parse HEAD 2>/dev/null || echo "")
+installed_commit=$(state_value commit)
+if [ -n "$installed_commit" ] && ! git merge-base --is-ancestor "$installed_commit" HEAD 2>/dev/null; then
+  echo "skipping: this copy (${head_commit:0:7}) is older than the build on the phone (${installed_commit:0:7})"
+  notify "Tether's renewal copy is behind the app on your iPhone, so it didn't reinstall. Push the repo so it can renew."
   exit 1
 fi
 
@@ -80,6 +105,9 @@ if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
   exit 1
 fi
 
-new_left=$(( $(expiry_epoch) - $(date +%s) ))
-echo "installed; good for $(( new_left / 3600 )) h"
+new_expiry=$(expiry_epoch)
+mkdir -p "$(dirname "$STATE")"
+printf 'expiry=%s\ncommit=%s\n' "$new_expiry" "$head_commit" > "$STATE"
+new_left=$(( new_expiry - $(date +%s) ))
+echo "installed ${head_commit:0:7}; good for $(( new_left / 3600 )) h"
 notify "Tether renewed on your iPhone for another 7 days."
