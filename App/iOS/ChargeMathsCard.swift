@@ -8,9 +8,36 @@ struct ChargeMathsCard: View {
     let breakdown: ScoreBreakdown
 
     /// Screenshot runs can pass `-tether.debugWhatIf YES` to open the what-if straight away.
-    @State private var whatIfOpen = Self.opensWhatIfForScreenshots
+    @State private var whatIfOpen = BreakdownCard.opensWhatIfForScreenshots
 
-    private static var opensWhatIfForScreenshots: Bool {
+    var body: some View {
+        BreakdownCard(title: "How Charge got to \(BreakdownCard.text(breakdown.total, breakdown.decimals))%",
+                      startTitle: "A night at your normal", startDetail: "every measure level with your average",
+                      totalTitle: "Charge", unit: "%", breakdown: breakdown,
+                      footnote: "Each measure is added in this order. Charge follows a curve, so a different order would split the points a little differently, but the total stays the same.") {
+            whatIfOpen = true
+        }
+        .sheet(isPresented: $whatIfOpen) {
+            ChargeWhatIfSheet(lastNight: inputs)
+                .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+/// A score as a running total: where it starts, what each step added or took away, and the total.
+struct BreakdownCard: View {
+    let title: String
+    let startTitle: String
+    let startDetail: String
+    let totalTitle: String
+    let unit: String
+    let breakdown: ScoreBreakdown
+    let footnote: String
+    let whatIf: () -> Void
+    /// Steps worth showing; a step that moved nothing and carried nothing is left out.
+    var hidesEmptySteps = false
+
+    static var opensWhatIfForScreenshots: Bool {
         #if DEBUG
         UserDefaults.standard.bool(forKey: "tether.debugWhatIf")
         #else
@@ -18,13 +45,15 @@ struct ChargeMathsCard: View {
         #endif
     }
 
+    static func text(_ value: Double, _ decimals: Int) -> String {
+        String(format: "%.\(decimals)f", value)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("How Charge got to \(breakdown.total)%").font(.headline).padding(.bottom, 10)
-            row(title: "A night at your normal", detail: "every measure level with your average") {
-                Text("\(breakdown.start)")
-            }
-            ForEach(breakdown.steps) { step in
+            Text(title).font(.headline).padding(.bottom, 10)
+            row(title: startTitle, detail: startDetail) { Text(Self.text(breakdown.start, breakdown.decimals)) }
+            ForEach(shownSteps) { step in
                 Divider().overlay(TetherBrand.cardStroke)
                 row(title: step.name, detail: "\(step.valueText), \(step.compareText) · counts \(step.weightPercent)%") {
                     Text(signed(step.points))
@@ -32,20 +61,20 @@ struct ChargeMathsCard: View {
                 }
             }
             Divider().overlay(TetherBrand.text.opacity(0.5))
-            row(title: "Charge", detail: nil) { Text("\(breakdown.total)%") }
-            Text("Each measure is added in this order. Charge follows a curve, so a different order would split the points a little differently, but the total stays the same.")
+            row(title: totalTitle, detail: nil) { Text("\(Self.text(breakdown.total, breakdown.decimals))\(unit)") }
+            Text(footnote)
                 .font(.caption).foregroundStyle(TetherBrand.sub)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
-            Button("What if…") { whatIfOpen = true }
+            Button("What if…", action: whatIf)
                 .buttonStyle(.bordered).tint(TetherBrand.text)
                 .padding(.top, 12)
         }
         .card()
-        .sheet(isPresented: $whatIfOpen) {
-            ChargeWhatIfSheet(lastNight: inputs)
-                .presentationDetents([.medium, .large])
-        }
+    }
+
+    private var shownSteps: [ScoreBreakdown.Step] {
+        hidesEmptySteps ? breakdown.steps.filter { $0.points != 0 || $0.weightPercent > 0 } : breakdown.steps
     }
 
     private func row(title: String, detail: String?, @ViewBuilder value: () -> some View) -> some View {
@@ -64,8 +93,9 @@ struct ChargeMathsCard: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func signed(_ points: Int) -> String {
-        points > 0 ? "+\(points)" : points < 0 ? "−\(-points)" : "0"
+    private func signed(_ points: Double) -> String {
+        let magnitude = Self.text(abs(points), breakdown.decimals)
+        return points > 0 ? "+\(magnitude)" : points < 0 ? "−\(magnitude)" : "0"
     }
 }
 

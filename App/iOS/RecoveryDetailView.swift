@@ -13,7 +13,7 @@ struct RecoveryDetailView: View {
             if let detail {
                 hero(detail)
                 if let inputs = detail.night.chargeInputs, let breakdown = ScoreBreakdown.charge(inputs),
-                   breakdown.total == detail.night.charge.map({ Int($0.rounded()) }) {
+                   breakdown.total == detail.night.charge.map({ $0.rounded() }) {
                     ChargeMathsCard(inputs: inputs, breakdown: breakdown)
                 } else if !detail.drivers.isEmpty {
                     drivers(detail)

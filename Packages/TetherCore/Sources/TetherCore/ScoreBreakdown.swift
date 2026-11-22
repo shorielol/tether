@@ -74,13 +74,22 @@ public struct ScoreBreakdown: Sendable, Equatable {
         public let compareText: String
         /// Share of the score this measure carries, in percent.
         public let weightPercent: Int
-        public let points: Int
+        /// Points this step added, already rounded to the breakdown's `decimals`.
+        public let points: Double
         public var id: String { name }
     }
 
-    public let start: Int
+    public let start: Double
     public let steps: [Step]
-    public let total: Int
+    public let total: Double
+    /// Decimal places the score is shown with: 0 for Charge, 1 for Effort.
+    public let decimals: Int
+
+    /// Rounds the way the score is shown, so the steps add up to the number on screen.
+    static func shown(_ value: Double, decimals: Int) -> Double {
+        let scale = pow(10, Double(decimals))
+        return (value * scale).rounded() / scale
+    }
 
     /// Charge as a running total. Each measure is brought from your normal to the night's value in turn,
     /// and every total along the way is a real run of the scorer, so the steps add up exactly.
@@ -118,18 +127,53 @@ public struct ScoreBreakdown: Sendable, Equatable {
         guard let startScore = level.charge() else { return nil }
         let totalWeight = moves.reduce(0) { $0 + $1.weight }
         var running = level
-        var previous = Int(startScore.rounded())
+        var previous = shown(startScore, decimals: 0)
         var steps: [Step] = []
         for move in moves {
             move.apply(&running)
             guard let score = running.charge() else { return nil }
-            let rounded = Int(score.rounded())
+            let rounded = shown(score, decimals: 0)
             steps.append(Step(name: move.name, valueText: move.value, compareText: move.compare,
                               weightPercent: Int((move.weight / totalWeight * 100).rounded()),
                               points: rounded - previous))
             previous = rounded
         }
-        return ScoreBreakdown(start: Int(startScore.rounded()), steps: steps, total: previous)
+        return ScoreBreakdown(start: shown(startScore, decimals: 0), steps: steps, total: previous, decimals: 0)
+    }
+
+    /// Names for Effort's five heart-rate bands, easiest first.
+    public static let effortBandNames = ["Light", "Moderate", "Hard", "Very hard", "Flat out"]
+
+    /// Effort (0–100) from minutes per band, through the scorer's own curve. Each minute in band n is
+    /// worth n; time below band 1 is worth nothing.
+    public static func effortScore(bandMinutes: [Double]) -> Double {
+        StrainScorer.trimpToStrain(points(bandMinutes))
+    }
+
+    /// Effort as a running total, easiest band first. Every total is a real run of the curve, so the
+    /// steps add up exactly.
+    public static func effort(bandMinutes: [Double]) -> ScoreBreakdown? {
+        let floors = StrainScorer.edwardsBandFloors
+        guard bandMinutes.count == floors.count + 1 else { return nil }
+        let totalPoints = points(bandMinutes)
+        var previous = 0.0
+        var steps: [Step] = []
+        for band in 1...floors.count {
+            let minutes = bandMinutes[band]
+            let rounded = shown(effortScore(bandMinutes: Array(bandMinutes.prefix(band + 1))), decimals: 1)
+            let top = band < floors.count ? "\(whole(floors[band]))" : "100"
+            steps.append(Step(name: effortBandNames[band - 1],
+                              valueText: "\(whole(minutes)) min at \(whole(floors[band - 1]))–\(top)% of your range",
+                              compareText: "each minute worth \(band)",
+                              weightPercent: totalPoints > 0 ? Int((minutes * Double(band) / totalPoints * 100).rounded()) : 0,
+                              points: shown(rounded - previous, decimals: 1)))
+            previous = rounded
+        }
+        return ScoreBreakdown(start: 0, steps: steps, total: previous, decimals: 1)
+    }
+
+    private static func points(_ bandMinutes: [Double]) -> Double {
+        bandMinutes.enumerated().reduce(0) { $0 + $1.element * Double($1.offset) }
     }
 
     private static func whole(_ value: Double) -> String { String(Int(value.rounded())) }

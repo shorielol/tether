@@ -20,7 +20,7 @@ struct ScoreBreakdownTests {
     @Test func theStepsAddUpExactlyToTheScore() throws {
         let charge = try #require(inputs().charge())
         let breakdown = try #require(ScoreBreakdown.charge(inputs()))
-        #expect(breakdown.total == Int(charge.rounded()))
+        #expect(breakdown.total == charge.rounded())
         #expect(breakdown.start + breakdown.steps.map(\.points).reduce(0, +) == breakdown.total)
     }
 
@@ -33,7 +33,7 @@ struct ScoreBreakdownTests {
 
     @Test func eachMeasureMovesTheWayItShould() throws {
         let breakdown = try #require(ScoreBreakdown.charge(inputs()))
-        func points(_ name: String) -> Int? { breakdown.steps.first { $0.name == name }?.points }
+        func points(_ name: String) -> Double? { breakdown.steps.first { $0.name == name }?.points }
         #expect((points("HRV") ?? 0) > 0)           // above normal
         #expect((points("Resting HR") ?? 0) > 0)    // below normal is good
         #expect((points("Sleep") ?? 0) < 0)         // Rest 78 is under the steady point
@@ -71,7 +71,7 @@ struct ScoreBreakdownTests {
         let charge = try #require(night.charge)
         let carried = try #require(night.chargeInputs)
         #expect(carried.charge() == charge)
-        #expect(try #require(ScoreBreakdown.charge(carried)).total == Int(charge.rounded()))
+        #expect(try #require(ScoreBreakdown.charge(carried)).total == charge.rounded())
     }
 
     @Test func aNightWithoutChargeHasNothingToBreakDown() {

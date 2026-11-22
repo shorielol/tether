@@ -360,6 +360,19 @@ public enum StrainScorer {
     /// line with a reserve that can be zero or negative.
     ///
     /// Byte-identical to the Kotlin twin `StrainScorer.zoneMinutes`.
+    // tether: a public read of the minutes Edwards scores in each band, for Tether's "Show the maths".
+    // Same durations and band edges as `strain(…)`; changes no score.
+    /// Minutes in each Edwards band for a day, `[0]` below band 1 and `[1...5]` bands 1 to 5, or nil when
+    /// `strain(…)` would not score the day for an invalid heart-rate reserve.
+    public static func edwardsBandMinutes(_ hr: [HRSample], maxHR: Double, restingHR: Double) -> [Double]? {
+        guard maxHR > restingHR, !hr.isEmpty else { return nil }
+        return zoneMinutes(hr, restingHR: restingHR, hrReserve: maxHR - restingHR,
+                           durations: sampleDurationsMinutes(hr))
+    }
+
+    // tether: the lower edge of each Edwards band, in percent of heart-rate reserve, band 1 first.
+    public static var edwardsBandFloors: [Double] { edwardsZones.map(\.threshold).reversed() }
+
     static func zoneMinutes(_ hr: [HRSample], restingHR: Double, hrReserve: Double,
                             durations: [Double]) -> [Double] {
         var out = [Double](repeating: 0.0, count: 6)

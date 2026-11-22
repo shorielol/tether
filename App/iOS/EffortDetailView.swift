@@ -19,6 +19,9 @@ struct EffortDetailView: View {
             zones
             stretches
             if detail.effortCurve.count >= 2 { effortBuild }
+            if today.effort != nil, let breakdown = ScoreBreakdown.effort(bandMinutes: today.effortBandMinutes) {
+                EffortMathsCard(bandMinutes: today.effortBandMinutes, breakdown: breakdown)
+            }
             HowItsWorkedOut(text: method)
         }
         .navigationTitle("Effort")
@@ -45,7 +48,7 @@ struct EffortDetailView: View {
         case .lowestFiveMinutes: "your lowest 5 minutes today"
         case .defaultValue: "a default until you've rested"
         }
-        return "Effort adds up the time your heart rate spends above resting, weighting harder zones more, on a 0–100 scale. Zones are shares of your max heart rate (\(today.maxHR), from your age); resting is \(today.restingHR) bpm, from \(resting). Heart-rate recovery is how far your heart rate falls in the minutes after hard work: a bigger drop is a fitter heart. Calories are an estimate from heart rate, age and weight."
+        return "Effort adds up the time your heart rate spends above resting, weighting harder bands more, on a 0–100 scale. Its bands are shares of your range, from resting (\(today.restingHR) bpm, from \(resting)) to your max (\(today.maxHR), from your age). The zones chart uses shares of your max instead, so the two don't line up exactly. Heart-rate recovery is how far your heart rate falls in the minutes after hard work: a bigger drop is a fitter heart. Calories are an estimate from heart rate, age and weight."
     }
 
     // MARK: Steps

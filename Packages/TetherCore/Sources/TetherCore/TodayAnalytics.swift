@@ -54,13 +54,16 @@ public struct TodaySnapshot: Sendable, Equatable {
     public let hrvNow: Double?
     public let stressHours: [StressHour]
     public let coverage: CoverageReport?
+    /// Minutes Effort counted in each of its heart-rate bands: `[0]` below band 1, then bands 1 to 5.
+    /// Empty when there was nothing to count.
+    public let effortBandMinutes: [Double]
 
     public var isEmpty: Bool { minuteSeries.isEmpty }
 
     public init(window: ClosedRange<Int>, maxHR: Int, minuteSeries: [MinutePoint], minBPM: Int?, avgBPM: Int?,
                 maxBPM: Int?, zoneMinutes: [Int], restingHR: Int, restingSource: RestingSource, effort: Double?,
                 caloriesTotal: Int?, caloriesActive: Int?, hrvNow: Double?, stressHours: [StressHour],
-                coverage: CoverageReport?) {
+                coverage: CoverageReport?, effortBandMinutes: [Double] = []) {
         self.window = window
         self.maxHR = maxHR
         self.minuteSeries = minuteSeries
@@ -76,6 +79,7 @@ public struct TodaySnapshot: Sendable, Equatable {
         self.hrvNow = hrvNow
         self.stressHours = stressHours
         self.coverage = coverage
+        self.effortBandMinutes = effortBandMinutes
     }
 }
 
@@ -126,7 +130,9 @@ public enum TodayAnalytics {
             caloriesTotal: energy.map { Int($0.totalKcal.rounded()) },
             caloriesActive: energy.map { Int($0.activeKcal.rounded()) },
             hrvNow: hrvNow, stressHours: stress,
-            coverage: Coverage.compute(timestamps: samples.map(\.ts), window: window.lowerBound...coverageEnd))
+            coverage: Coverage.compute(timestamps: samples.map(\.ts), window: window.lowerBound...coverageEnd),
+            effortBandMinutes: StrainScorer.edwardsBandMinutes(samples, maxHR: Double(maxHR),
+                                                               restingHR: Double(resting)) ?? [])
     }
 
     /// Zone 1–5 for a heart rate, 0 when below zone 1.
