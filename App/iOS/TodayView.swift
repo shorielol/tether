@@ -58,6 +58,7 @@ struct TodayView: View {
             ScreenHeader(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)), title: "Today") {
                 StrapChip { showingStrap = true }
             }
+            SyncLine()
             ScoreStrip(charge: charge, chargeBand: Self.band(model.nights, before: chargeNight) { $0.charge },
                        progress: model.baseline, night: night, sleepBand: sleepBand, effort: model.today?.effort)
                 .padding(.top, 6)

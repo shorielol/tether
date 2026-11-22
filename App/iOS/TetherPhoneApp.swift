@@ -18,6 +18,8 @@ struct TetherPhoneApp: App {
             if phase == .background { Task { await model.collector.flush(); await model.syncFolder(force: true) } }
             if phase == .active, model.onboarded { Task { await model.scheduleExpiryReminder() } }
             if phase == .active { model.startTodayUpdates() } else { model.stopTodayUpdates() }
+            // Every open reads what the strap stored while the phone wasn't listening, then rescores.
+            if phase == .active, model.onboarded { model.collector.appOpened() }
         }
     }
 }

@@ -98,6 +98,8 @@ public final class LiveCollector {
     public private(set) var isSyncingHistory = false
     /// When the last history sync ended (unix seconds), kept across launches.
     public private(set) var lastHistorySync: Int?
+    /// The app was opened while the strap was away; sync when it next connects.
+    @ObservationIgnored private var syncOnConnect = false
     /// The oldest moment the strap's history has filled in since the nights were last rescored, kept across
     /// launches. Nights from that day on get scored again so minutes the phone missed count.
     public private(set) var historyRescoreFrom: Int?
@@ -123,6 +125,9 @@ public final class LiveCollector {
     private static let historyRescoreKey = "tether.history.rescoreFrom"
     /// A ready data link syncs on its own when the last sync is at least this old.
     public static let historySyncInterval = 30 * 60
+    /// Opening the app syncs unless the last sync is younger than this, so flicking between apps
+    /// doesn't re-read the strap.
+    public static let openSyncInterval = 2 * 60
     /// While the link stays up, how often to check whether a sync is due.
     static let heartbeatSeconds = 5 * 60
 
@@ -193,7 +198,24 @@ public final class LiveCollector {
         defaults.removeObject(forKey: Self.historyRescoreKey)
     }
 
+    /// The app was opened: read the strap now if it's connected, or as soon as it connects, so the
+    /// numbers on screen include what the strap stored while the phone wasn't listening.
+    public func appOpened() {
+        if let last = lastHistorySync, now() - last < Self.openSyncInterval { return }
+        guard dataLink == .ready else {
+            syncOnConnect = true
+            return
+        }
+        syncHistoryNow()
+    }
+
     private func syncHistoryIfDue() {
+        if syncOnConnect {
+            syncOnConnect = false
+            if let last = lastHistorySync, now() - last < Self.openSyncInterval { return }
+            syncHistoryNow()
+            return
+        }
         if let last = lastHistorySync, now() - last < Self.historySyncInterval { return }
         syncHistoryNow()
     }

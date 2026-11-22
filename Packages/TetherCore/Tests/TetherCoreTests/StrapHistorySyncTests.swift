@@ -156,6 +156,63 @@ struct StrapHistorySyncTests {
         #expect(LiveCollector.historySyncInterval == 30 * 60)
     }
 
+    /// A collector that last synced `minutesAgo` before its clock, with the link down.
+    private func syncedEarlier(_ source: FakeDataLinkSource, minutesAgo: Int) -> LiveCollector {
+        final class Clock { var now = 0 }
+        let clock = Clock()
+        clock.now = now - minutesAgo * 60
+        let defaults = makeDefaults()
+        let pairing = LiveCollector(source: source, sink: FakeSink(), defaults: defaults, now: { now - 3_600 })
+        pairing.pair(with: UUID())
+        let collector = LiveCollector(source: source, sink: FakeSink(), defaults: defaults, now: { clock.now })
+        source.send(.dataLink(.ready))
+        collector.historyWentQuiet()
+        source.send(.dataLink(.unavailable))
+        clock.now = now
+        return collector
+    }
+
+    @Test func openingTheAppSyncsEvenWhenTheLastSyncWasRecent() {
+        let source = FakeDataLinkSource()
+        let collector = syncedEarlier(source, minutesAgo: 10)
+        source.send(.dataLink(.ready))
+        #expect(source.historyRequests == 1, "ten minutes on, the link coming back alone asks nothing")
+        collector.appOpened()
+        #expect(source.historyRequests == 2)
+        #expect(collector.isSyncingHistory)
+    }
+
+    @Test func openingTheAppWhileTheStrapIsAwaySyncsOnceItConnects() {
+        let source = FakeDataLinkSource()
+        let collector = syncedEarlier(source, minutesAgo: 10)
+        collector.appOpened()
+        #expect(source.historyRequests == 1)
+        source.send(.dataLink(.ready))
+        #expect(source.historyRequests == 2)
+        collector.historyWentQuiet()
+        source.send(.dataLink(.unavailable))
+        source.send(.dataLink(.ready))
+        #expect(source.historyRequests == 2, "one open, one sync")
+    }
+
+    @Test func switchingBackAndForthDoesNotRereadTheStrap() {
+        let source = FakeDataLinkSource()
+        let collector = syncedEarlier(source, minutesAgo: 1)
+        source.send(.dataLink(.ready))
+        collector.appOpened()
+        #expect(source.historyRequests == 1, "synced a minute ago, nothing new to ask for")
+        #expect(LiveCollector.openSyncInterval == 2 * 60)
+    }
+
+    @Test func openingDuringASyncLeavesItRunning() {
+        let source = FakeDataLinkSource()
+        let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())
+        source.send(.dataLink(.ready))
+        collector.appOpened()
+        #expect(source.historyRequests == 1)
+        #expect(collector.isSyncingHistory)
+    }
+
     @Test func theHeartbeatAsksNothingWhileTheLinkIsDown() {
         let source = FakeDataLinkSource()
         let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())

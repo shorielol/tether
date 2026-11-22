@@ -500,3 +500,29 @@ struct StrapChip: View {
         return collector.batteryPercent.map { "Strap connected, battery \($0) percent" } ?? "Strap connected"
     }
 }
+
+/// Under Today's title: whether the strap's memory is being read right now, or when it last was.
+struct SyncLine: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let collector = model.collector
+        if collector.isSyncingHistory {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Updating from your strap…")
+            }
+            .font(.caption).foregroundStyle(TetherBrand.sub)
+            .accessibilityElement(children: .combine)
+        } else if collector.isPaired, let last = collector.lastHistorySync {
+            Text("Updated from your strap \(Self.when(last))")
+                .font(.caption).foregroundStyle(TetherBrand.sub)
+        }
+    }
+
+    private static func when(_ ts: Int) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(ts))
+        let time = date.formatted(date: .omitted, time: .shortened)
+        return Calendar.current.isDateInToday(date) ? "at \(time)" : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    }
+}
