@@ -128,6 +128,11 @@ public final class LiveCollector {
 
     // MARK: Strap history
 
+    /// After a refusal, sends the hello again on the current connection.
+    public func retryDataLink() {
+        source.retryDataLink()
+    }
+
     /// Starts a history sync now if the data link is ready and none is running.
     public func syncHistoryNow() {
         guard let pairedAt, dataLink == .ready, !isSyncingHistory, !isReleased else { return }

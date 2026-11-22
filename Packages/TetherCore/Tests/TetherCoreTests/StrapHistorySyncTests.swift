@@ -14,6 +14,8 @@ final class FakeDataLinkSource: HeartDataSource {
     func connect(to strap: UUID) { rememberedStrap = strap }
     func forget() { rememberedStrap = nil }
     func sendStrapCommand(_ frame: [UInt8]) { commands.append(frame) }
+    var retries = 0
+    func retryDataLink() { retries += 1 }
     func send(_ event: HeartSourceEvent) { onEvent?(event) }
 
     var historyRequests: Int { commands.filter { $0[10] == WhoopCommandCode.sendHistoricalData }.count }
@@ -95,9 +97,17 @@ struct StrapHistorySyncTests {
     @Test func aDeclinedLinkAsksNothing() {
         let source = FakeDataLinkSource()
         let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())
-        source.send(.dataLink(.declined))
+        source.send(.dataLink(.declined(reason: "Encryption is insufficient.")))
         collector.syncHistoryNow()
-        #expect(collector.dataLink == .declined)
+        #expect(collector.dataLink == .declined(reason: "Encryption is insufficient."))
         #expect(source.commands.isEmpty)
+    }
+
+    @Test func tryingAgainAsksTheSourceToReopenTheLink() {
+        let source = FakeDataLinkSource()
+        let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())
+        source.send(.dataLink(.declined(reason: "Encryption is insufficient.")))
+        collector.retryDataLink()
+        #expect(source.retries == 1)
     }
 }

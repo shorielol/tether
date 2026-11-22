@@ -41,8 +41,9 @@ public enum StrapDataLink: Equatable, Sendable {
     /// Waiting for the strap to accept the hello; iOS may show its pairing prompt.
     case pairing
     case ready
-    /// The hello was refused, for example the pairing prompt was cancelled.
-    case declined
+    /// The hello was refused, for example the pairing prompt was cancelled or another device holds
+    /// the strap's pairing. `reason` is what iOS said.
+    case declined(reason: String)
 }
 
 /// Anything that can feed heart data into Tether: the standard heart-rate service, plus on iPhone
@@ -61,12 +62,15 @@ public protocol HeartDataSource: AnyObject {
     func reclaimStrap()
     /// Writes one framed command to the strap's data link. Does nothing without one.
     func sendStrapCommand(_ frame: [UInt8])
+    /// Sends the hello again on the current connection, after a refusal.
+    func retryDataLink()
 }
 
 public extension HeartDataSource {
     func releaseStrap() {}
     func reclaimStrap() {}
     func sendStrapCommand(_ frame: [UInt8]) {}
+    func retryDataLink() {}
 }
 
 /// Reads Heart Rate Measurement (0x2A37), Battery Level (0x2A19) and Firmware Revision (0x2A26).
@@ -202,6 +206,16 @@ public final class StandardHRSource: NSObject, HeartDataSource {
     }
 
     /// Writes the hello once the command characteristic is known; iOS may show its pairing prompt.
+    public func retryDataLink() {
+        guard opensDataLink, let peripheral, peripheral.state == .connected, !dataLinkReady else { return }
+        helloPending = false
+        if dataCommandChar == nil {
+            peripheral.discoverServices([Self.dataService])
+        } else {
+            openDataLink(on: peripheral)
+        }
+    }
+
     private func openDataLink(on peripheral: CBPeripheral) {
         guard opensDataLink, !helloPending, !dataLinkReady, let dataCommandChar else { return }
         helloPending = true
@@ -280,8 +294,8 @@ extension StandardHRSource: @MainActor CBPeripheralDelegate {
                                        error: (any Error)?) {
         guard characteristic.uuid == Self.dataCommand, helloPending else { return }
         helloPending = false
-        guard error == nil else {
-            emit(.dataLink(.declined))
+        if let error {
+            emit(.dataLink(.declined(reason: error.localizedDescription)))
             return
         }
         dataNotifyChars.forEach { peripheral.setNotifyValue(true, for: $0) }
@@ -289,6 +303,10 @@ extension StandardHRSource: @MainActor CBPeripheralDelegate {
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
                                        error: (any Error)?) {
+        if let error, Self.dataNotify.contains(characteristic.uuid), !dataLinkReady {
+            emit(.dataLink(.declined(reason: error.localizedDescription)))
+            return
+        }
         guard !dataLinkReady, !dataNotifyChars.isEmpty,
               dataNotifyChars.allSatisfy(\.isNotifying) else { return }
         dataLinkReady = true

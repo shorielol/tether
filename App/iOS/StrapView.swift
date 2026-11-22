@@ -138,6 +138,12 @@ private struct HistoryCard: View {
                 Button("Sync now") { collector.syncHistoryNow() }
                     .buttonStyle(.bordered)
             }
+            if case .declined(let reason) = collector.dataLink {
+                Text("iOS said: \(reason)").font(.footnote).foregroundStyle(TetherBrand.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try again") { collector.retryDataLink() }
+                    .buttonStyle(.bordered)
+            }
         }
         .card()
         .accessibilityElement(children: .combine)
@@ -148,7 +154,7 @@ private struct HistoryCard: View {
         case .pairing:
             return "Accept the pairing request to let Tether read the strap's memory: skin temperature, motion and any minutes your phone missed."
         case .declined:
-            return "Pairing wasn't accepted, so Tether records live heart rate only. It asks again the next time the strap reconnects."
+            return "The strap didn't accept this phone, so Tether records live heart rate only. If another device (like a Mac) is paired with the strap, forget it there first, then try again."
         case .unavailable:
             return lastSynced(collector).map { "Last synced \($0). Syncs again when the strap is connected." }
                 ?? "Reads skin temperature, motion and missed minutes from the strap once it's connected."
