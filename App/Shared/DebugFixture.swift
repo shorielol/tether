@@ -87,18 +87,26 @@ enum DebugFixture {
                 at += minutes * 60
             }
             let hasCharge = index >= 3
+            let inputs = index == 5 ? fixtureChargeInputs : nil
             return NightSummary(
                 day: DayScorer.dayKey(dayStart: dayStart), sleepStart: bed, sleepEnd: wake,
                 totalSleepMin: Double(wake - bed) / 60 * 0.92, efficiency: 0.92, deepMin: 85, remMin: 117,
                 lightMin: 175, disturbances: 3, restingHR: 52 - index % 2, hrv: 54 + Double(index * 2),
-                respRate: 14.6, charge: hasCharge ? [58, 71, 64][index - 3] : nil, rest: hasCharge ? 78 : nil,
+                respRate: 14.6, charge: inputs?.charge() ?? (hasCharge ? [58, 71, 64][index - 3] : nil),
+                rest: hasCharge ? 78 : nil,
                 drivers: index == 5 ? [.init(label: "HRV", valueText: "6 ms above your average", deltaPoints: 7),
                                        .init(label: "Sleep", valueText: "58 min short of your need", deltaPoints: -5),
                                        .init(label: "Resting HR", valueText: "1 bpm below your average", deltaPoints: 2)] : [],
                 stages: stages, skinTempC: [33.1, 33.3, 32.9, 33.2, 33.0, 33.6][index],
-                skinTempDevC: index >= 3 ? [0.1, -0.1, 0.5][index - 3] : nil)
+                skinTempDevC: index >= 3 ? [0.1, -0.1, 0.5][index - 3] : nil, chargeInputs: inputs)
         }
     }
+
+    /// Last night's Charge inputs, matching the sample night above.
+    private static let fixtureChargeInputs = ChargeInputs(
+        hrv: 64, restingHR: 51, resp: 14.6, rest: 78, skinTempDevC: 0.5,
+        hrvNormal: .init(mean: 58, spread: 5), restingHRNormal: .init(mean: 52, spread: 2),
+        respNormal: .init(mean: 14.8, spread: 0.5))
 
     private static func base(_ hour: Double) -> Double {
         switch hour {

@@ -55,12 +55,14 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
     public let skinTempC: Double?
     /// How far that is from your normal (°C). Nil until enough earlier nights have one.
     public let skinTempDevC: Double?
+    /// What Charge was worked out from, for a night scored just now. Stored nights don't keep it.
+    public let chargeInputs: ChargeInputs?
     public var id: String { day }
 
     public init(day: String, sleepStart: Int?, sleepEnd: Int?, totalSleepMin: Double?, efficiency: Double?,
                 deepMin: Double?, remMin: Double?, lightMin: Double?, disturbances: Int?, restingHR: Int?,
                 hrv: Double?, respRate: Double?, charge: Double?, rest: Double?, drivers: [Driver], stages: [Stage],
-                skinTempC: Double? = nil, skinTempDevC: Double? = nil) {
+                skinTempC: Double? = nil, skinTempDevC: Double? = nil, chargeInputs: ChargeInputs? = nil) {
         self.day = day
         self.sleepStart = sleepStart
         self.sleepEnd = sleepEnd
@@ -79,6 +81,7 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
         self.stages = stages
         self.skinTempC = skinTempC
         self.skinTempDevC = skinTempDevC
+        self.chargeInputs = chargeInputs
     }
 }
 
@@ -106,7 +109,7 @@ public enum DayScorer {
                              gravity: [GravitySample] = [], profile: UserProfile, history: [DailyMetric],
                              tzOffsetSeconds: Int) -> NightSummary {
         summary(of: analyze(day: day, hr: hr, rr: rr, skinTemp: skinTemp, gravity: gravity, profile: profile,
-                            history: history, tzOffsetSeconds: tzOffsetSeconds), day: day)
+                            history: history, tzOffsetSeconds: tzOffsetSeconds), day: day, history: history)
     }
 
     static func analyze(day: String, hr: [HRSample], rr: [RRInterval], skinTemp: [SkinTempSample] = [],
@@ -196,7 +199,7 @@ public enum DayScorer {
             skinTemp: Baselines.foldHistory(nights.map(\.skinTempC), cfg: skinCfg))
     }
 
-    static func summary(of result: AnalyticsEngine.DayResult, day: String) -> NightSummary {
+    static func summary(of result: AnalyticsEngine.DayResult, day: String, history: [DailyMetric]) -> NightSummary {
         let main = result.sleepSessions.max { ($0.end - $0.start) < ($1.end - $1.start) }
         let daily = result.daily
         return NightSummary(
@@ -209,7 +212,8 @@ public enum DayScorer {
                 NightSummary.Driver(label: $0.label, valueText: $0.valueText, deltaPoints: $0.deltaPoints)
             },
             stages: stages(main?.stages ?? []),
-            skinTempC: daily.skinTempC, skinTempDevC: daily.skinTempDevC)
+            skinTempC: daily.skinTempC, skinTempDevC: daily.skinTempDevC,
+            chargeInputs: ChargeInputs.from(daily: daily, rest: result.restScore, baselines: baselines(history: history)))
     }
 
     static func stages(_ segments: [StageSegment]) -> [NightSummary.Stage] {
@@ -267,7 +271,7 @@ extension WhoopStoreSink {
         if !result.cachedSleep.isEmpty {
             _ = try await store.upsertSleepSessions(result.cachedSleep, deviceId: Self.deviceId)
         }
-        return DayScorer.summary(of: result, day: day)
+        return DayScorer.summary(of: result, day: day, history: history)
     }
 
     /// Days that already have a scored row.

@@ -12,7 +12,12 @@ struct RecoveryDetailView: View {
         TabScreen {
             if let detail {
                 hero(detail)
-                if !detail.drivers.isEmpty { drivers(detail) }
+                if let inputs = detail.night.chargeInputs, let breakdown = ScoreBreakdown.charge(inputs),
+                   breakdown.total == detail.night.charge.map({ Int($0.rounded()) }) {
+                    ChargeMathsCard(inputs: inputs, breakdown: breakdown)
+                } else if !detail.drivers.isEmpty {
+                    drivers(detail)
+                }
                 measures(detail)
                 if detail.recent.count >= 2 { trend(detail) }
                 notMeasured
