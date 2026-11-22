@@ -12,6 +12,7 @@ struct SleepView: View {
                 DetailHero(label: eyebrow, meaning: meaning(night)) {
                     Text(SleepFormat.duration(minutes: night.totalSleepMin))
                 }
+                if let coach = model.sleepCoach { SleepCoachCard(coach: coach) }
                 HypnogramCard(night: night)
                 RecentNightsCard(nights: model.nights)
                 if let breakdown = ScoreBreakdown.sleep(night) {

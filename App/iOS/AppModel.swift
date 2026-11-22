@@ -142,6 +142,54 @@ final class AppModel {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["tether.mark.\(mark)"])
     }
 
+    /// Tonight's need and bedtime, from your nights, today's effort and your alarm.
+    var sleepCoach: SleepCoach? {
+        var all = nights
+        if let latestNight, !all.contains(where: { $0.day == latestNight.day }) { all.append(latestNight) }
+        let alarm = collector.alarm.setting.flatMap { $0.isOn ? (hour: $0.hour, minute: $0.minute) : nil }
+        return SleepCoach.compute(nights: all, effortYesterday: today?.effort, age: profile?.age ?? 18,
+                                  wakeTarget: alarm)
+    }
+
+    private static let bedtimeReminderKey = "tether.sleep.bedtimeReminder"
+    private static let bedtimeReminderId = "tether.bedtime"
+    /// Minutes before bedtime the reminder goes off.
+    static let bedtimeLeadMin = 30
+    @ObservationIgnored private var scheduledBedtime: String?
+
+    var bedtimeReminder: Bool = UserDefaults.standard.bool(forKey: AppModel.bedtimeReminderKey) {
+        didSet {
+            UserDefaults.standard.set(bedtimeReminder, forKey: Self.bedtimeReminderKey)
+            scheduledBedtime = nil
+            Task { await scheduleBedtimeReminder() }
+        }
+    }
+
+    /// Tonight's reminder, 30 minutes before bedtime. Rescheduled only when the bedtime moves.
+    func scheduleBedtimeReminder() async {
+        let center = UNUserNotificationCenter.current()
+        guard bedtimeReminder, let coach = sleepCoach else {
+            center.removePendingNotificationRequests(withIdentifiers: [Self.bedtimeReminderId])
+            scheduledBedtime = nil
+            return
+        }
+        let calendar = Calendar.current
+        var remindAt = calendar.startOfDay(for: .now).addingTimeInterval(TimeInterval((coach.bedtimeMinute - Self.bedtimeLeadMin) * 60))
+        if remindAt < .now { remindAt = calendar.date(byAdding: .day, value: 1, to: remindAt) ?? remindAt }
+        let key = "\(Int(remindAt.timeIntervalSince1970))-\(Int(coach.need.totalMin))"
+        guard key != scheduledBedtime else { return }
+        guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+        let content = UNMutableNotificationContent()
+        let bed = remindAt.addingTimeInterval(TimeInterval(Self.bedtimeLeadMin * 60)).formatted(date: .omitted, time: .shortened)
+        content.title = "Bed by \(bed)"
+        content.body = "That gets you \(DayLine.duration(coach.need.totalMin)) of sleep tonight."
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: remindAt)
+        center.removePendingNotificationRequests(withIdentifiers: [Self.bedtimeReminderId])
+        try? await center.add(UNNotificationRequest(identifier: Self.bedtimeReminderId, content: content,
+                                                    trigger: UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)))
+        scheduledBedtime = key
+    }
+
     /// Last night's vitals against your range, and the early warning.
     var healthMonitor: HealthMonitor? { HealthMonitor.check(latest: lastNight, history: nights) }
 
@@ -244,6 +292,7 @@ final class AppModel {
                 await self?.refreshToday()
                 await self?.scoreNights()
                 await self?.refreshMarks()
+                await self?.scheduleBedtimeReminder()
                 await self?.syncFolder()
                 try? await Task.sleep(for: .seconds(30))
             }
