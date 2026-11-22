@@ -190,6 +190,15 @@ final class AppModel {
         scheduledBedtime = key
     }
 
+    /// Today's energy forecast, once last night's sleep ended today.
+    var energyForecast: EnergyForecast? {
+        var all = nights
+        if let latestNight, !all.contains(where: { $0.day == latestNight.day }) { all.append(latestNight) }
+        guard let end = all.compactMap(\.sleepEnd).max(),
+              Calendar.current.isDateInToday(Date(timeIntervalSince1970: TimeInterval(end))) else { return nil }
+        return EnergyForecast.compute(nights: all, owedSleepMin: sleepCoach?.need.owedMin ?? 0)
+    }
+
     /// Last night's vitals against your range, and the early warning.
     var healthMonitor: HealthMonitor? { HealthMonitor.check(latest: lastNight, history: nights) }
 

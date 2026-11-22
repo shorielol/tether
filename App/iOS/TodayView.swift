@@ -82,6 +82,9 @@ struct TodayView: View {
                            : "Tap the strap button at the top to pair your strap and start your history.")
                     .card()
             }
+            if let forecast = model.energyForecast {
+                EnergyCard(forecast: forecast, now: Int(Date.now.timeIntervalSince1970))
+            }
             DetailLink(.recovery) { RecoveryCard(detail: model.recovery, charge: charge) }
             if model.collector.isPaired {
                 DetailLink(.effort) { StepsRow(steps: model.steps) }
