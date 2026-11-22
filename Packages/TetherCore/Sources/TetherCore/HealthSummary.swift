@@ -47,6 +47,7 @@ public struct HealthVital: Sendable, Equatable, Identifiable {
             vital("HRV", "ms", higherIsBetter: true) { $0.hrv },
             vital("Resting HR", "bpm", higherIsBetter: false) { $0.restingHR.map(Double.init) },
             vital("Breathing", "/min", decimals: 1, higherIsBetter: nil) { $0.respRate },
+            vital("Skin temp", "°C", decimals: 1, higherIsBetter: nil) { $0.skinTempC },
         ]
     }
 

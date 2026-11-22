@@ -168,7 +168,7 @@ struct RecoveryDetailView: View {
     }
 
     private var notMeasured: some View {
-        HowItsWorkedOut(text: "Charge compares last night with your own normal: HRV counts most, then resting heart rate, sleep and breathing. Your normal is built from your earlier nights, and the grey band on each bar is the middle half of them. Charge starts after \(BaselineProgress.chargeNights) nights. Zones: Green 67–100, Yellow 34–66, Red 0–33. Skin temperature joins once Tether reads it into a nightly value; your strap already records it.")
+        HowItsWorkedOut(text: "Charge compares last night with your own normal: HRV counts most, then resting heart rate, sleep and breathing. Your normal is built from your earlier nights, and the grey band on each bar is the middle half of them. Charge starts after \(BaselineProgress.chargeNights) nights. Zones: Green 67–100, Yellow 34–66, Red 0–33. Skin temperature is your skin's average while asleep; once it has a normal, a night well away from it in either direction pulls Charge down a little.")
     }
 
     private func format(_ value: Double, _ decimals: Int) -> String {

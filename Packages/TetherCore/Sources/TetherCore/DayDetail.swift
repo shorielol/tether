@@ -272,6 +272,7 @@ public struct RecoveryDetail: Sendable, Equatable {
             measure("HRV", "ms", higherIsBetter: true) { $0.hrv },
             measure("Resting HR", "bpm", higherIsBetter: false) { $0.restingHR.map(Double.init) },
             measure("Breathing", "/min", decimals: 1, higherIsBetter: nil) { $0.respRate },
+            measure("Skin temp", "°C", decimals: 1, higherIsBetter: nil) { $0.skinTempC },
             measure("Asleep", "h", decimals: 1, higherIsBetter: true) { $0.totalSleepMin.map { $0 / 60 } },
             measure("Efficiency", "%", higherIsBetter: true) { $0.efficiency.map { $0 * 100 } },
         ].compactMap { $0 }

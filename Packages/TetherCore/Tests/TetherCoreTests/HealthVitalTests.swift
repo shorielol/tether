@@ -11,7 +11,20 @@ struct HealthVitalTests {
 
     @Test func listsHrvRestingAndBreathingInOrder() {
         let vitals = HealthVital.compute(latest: night(22, hrv: 50, resting: 56, resp: 14.5), history: [])
-        #expect(vitals.map(\.name) == ["HRV", "Resting HR", "Breathing"])
+        #expect(vitals.map(\.name) == ["HRV", "Resting HR", "Breathing", "Skin temp"])
+    }
+
+    @Test func skinTemperatureReadsInDegreesToOneDecimal() throws {
+        let plain = night(22, hrv: 50, resting: 56, resp: 14.5)
+        let latest = NightSummary(day: plain.day, sleepStart: 0, sleepEnd: 1, totalSleepMin: 420, efficiency: 0.9,
+                                  deepMin: nil, remMin: nil, lightMin: nil, disturbances: nil, restingHR: 56,
+                                  hrv: 50, respRate: 14.5, charge: nil, rest: nil, drivers: [], stages: [],
+                                  skinTempC: 33.42, skinTempDevC: 0.3)
+        let skin = try #require(HealthVital.compute(latest: latest, history: []).first { $0.name == "Skin temp" })
+        #expect(skin.value == 33.42)
+        #expect(skin.unit == "°C")
+        #expect(skin.decimals == 1)
+        #expect(skin.higherIsBetter == nil)
     }
 
     @Test func aMeasureMissingLastNightKeepsItsRowWithNoValue() throws {

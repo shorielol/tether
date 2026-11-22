@@ -51,11 +51,16 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
     public let drivers: [Driver]
     /// Estimated from heart rate alone until motion data exists.
     public let stages: [Stage]
+    /// Skin temperature while asleep (°C), from the strap's history.
+    public let skinTempC: Double?
+    /// How far that is from your normal (°C). Nil until enough earlier nights have one.
+    public let skinTempDevC: Double?
     public var id: String { day }
 
     public init(day: String, sleepStart: Int?, sleepEnd: Int?, totalSleepMin: Double?, efficiency: Double?,
                 deepMin: Double?, remMin: Double?, lightMin: Double?, disturbances: Int?, restingHR: Int?,
-                hrv: Double?, respRate: Double?, charge: Double?, rest: Double?, drivers: [Driver], stages: [Stage]) {
+                hrv: Double?, respRate: Double?, charge: Double?, rest: Double?, drivers: [Driver], stages: [Stage],
+                skinTempC: Double? = nil, skinTempDevC: Double? = nil) {
         self.day = day
         self.sleepStart = sleepStart
         self.sleepEnd = sleepEnd
@@ -72,6 +77,8 @@ public struct NightSummary: Sendable, Equatable, Identifiable {
         self.rest = rest
         self.drivers = drivers
         self.stages = stages
+        self.skinTempC = skinTempC
+        self.skinTempDevC = skinTempDevC
     }
 }
 
@@ -95,20 +102,22 @@ public enum DayScorer {
         return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(dayStart)))
     }
 
-    public static func score(day: String, hr: [HRSample], rr: [RRInterval], profile: UserProfile,
-                             history: [DailyMetric], tzOffsetSeconds: Int) -> NightSummary {
-        summary(of: analyze(day: day, hr: hr, rr: rr, profile: profile, history: history,
+    public static func score(day: String, hr: [HRSample], rr: [RRInterval], skinTemp: [SkinTempSample] = [],
+                             profile: UserProfile, history: [DailyMetric], tzOffsetSeconds: Int) -> NightSummary {
+        summary(of: analyze(day: day, hr: hr, rr: rr, skinTemp: skinTemp, profile: profile, history: history,
                             tzOffsetSeconds: tzOffsetSeconds), day: day)
     }
 
-    static func analyze(day: String, hr: [HRSample], rr: [RRInterval], profile: UserProfile,
-                        history: [DailyMetric], tzOffsetSeconds: Int) -> AnalyticsEngine.DayResult {
+    static func analyze(day: String, hr: [HRSample], rr: [RRInterval], skinTemp: [SkinTempSample] = [],
+                        profile: UserProfile, history: [DailyMetric],
+                        tzOffsetSeconds: Int) -> AnalyticsEngine.DayResult {
         let sortedHR = hr.sorted { $0.ts < $1.ts }
         let sortedRR = rr.sorted { $0.ts < $1.ts }
         let fragments = SleepStager.hrOnlySessions(day: day, hr: sortedHR, rr: sortedRR, resp: [])
         let sleep = joiningTheNight(fragments, day: day, hr: sortedHR, rr: sortedRR, tzOffsetSeconds: tzOffsetSeconds)
         return AnalyticsEngine.analyzeDay(
             day: day, hr: sortedHR, rr: sortedRR,
+            skinTemp: skinTemp.sorted { $0.ts < $1.ts },
             profile: .init(weightKg: profile.weightKg, heightCm: Double(profile.heightCm),
                            age: Double(profile.age), sex: profile.sex.rawValue),
             baselines: baselines(history: history),
@@ -150,15 +159,18 @@ public enum DayScorer {
         return Int(utcMidnight.timeIntervalSince1970) - tzOffsetSeconds
     }
 
-    /// Personal HRV and resting-HR baselines from earlier nights, oldest first.
+    /// Personal baselines from earlier nights, oldest first: HRV, resting HR, breathing and skin temperature.
     static func baselines(history: [DailyMetric]) -> AnalyticsEngine.ProfileBaselines {
         let nights = history.sorted { $0.day < $1.day }
-        guard let hrvCfg = Baselines.metricCfg["hrv"], let rhrCfg = Baselines.metricCfg["resting_hr"] else {
+        guard let hrvCfg = Baselines.metricCfg["hrv"], let rhrCfg = Baselines.metricCfg["resting_hr"],
+              let respCfg = Baselines.metricCfg["resp"], let skinCfg = Baselines.metricCfg["skin_temp"] else {
             return AnalyticsEngine.ProfileBaselines()
         }
         return AnalyticsEngine.ProfileBaselines(
             hrv: Baselines.foldHistory(nights.map(\.avgHrv), cfg: hrvCfg),
-            restingHR: Baselines.foldHistory(nights.map { $0.restingHr.map(Double.init) }, cfg: rhrCfg))
+            restingHR: Baselines.foldHistory(nights.map { $0.restingHr.map(Double.init) }, cfg: rhrCfg),
+            resp: Baselines.foldHistory(nights.map(\.respRateBpm), cfg: respCfg),
+            skinTemp: Baselines.foldHistory(nights.map(\.skinTempC), cfg: skinCfg))
     }
 
     static func summary(of result: AnalyticsEngine.DayResult, day: String) -> NightSummary {
@@ -173,7 +185,8 @@ public enum DayScorer {
             drivers: result.chargeDrivers.map {
                 NightSummary.Driver(label: $0.label, valueText: $0.valueText, deltaPoints: $0.deltaPoints)
             },
-            stages: stages(main?.stages ?? []))
+            stages: stages(main?.stages ?? []),
+            skinTempC: daily.skinTempC, skinTempDevC: daily.skinTempDevC)
     }
 
     static func stages(_ segments: [StageSegment]) -> [NightSummary.Stage] {
@@ -192,7 +205,8 @@ public enum DayScorer {
             totalSleepMin: daily.totalSleepMin, efficiency: daily.efficiency, deepMin: daily.deepMin,
             remMin: daily.remMin, lightMin: daily.lightMin, disturbances: daily.disturbances,
             restingHR: daily.restingHr, hrv: daily.avgHrv, respRate: daily.respRateBpm,
-            charge: daily.recovery, rest: nil, drivers: [], stages: Self.stages(stages))
+            charge: daily.recovery, rest: nil, drivers: [], stages: Self.stages(stages),
+            skinTempC: daily.skinTempC, skinTempDevC: daily.skinTempDevC)
     }
 }
 
@@ -209,10 +223,12 @@ extension WhoopStoreSink {
                                            limit: Self.scoringReadLimit)
         let rr = try await store.rrIntervals(deviceId: Self.deviceId, from: window.lowerBound, to: window.upperBound,
                                              limit: Self.scoringReadLimit)
+        let skinTemp = try await store.skinTempSamples(deviceId: Self.deviceId, from: window.lowerBound,
+                                                       to: window.upperBound, limit: Self.scoringReadLimit)
         let history = try await store.dailyMetrics(deviceId: Self.deviceId, from: "0000-01-01", to: day)
             .filter { $0.day < day }
-        let result = DayScorer.analyze(day: day, hr: hr, rr: rr, profile: profile, history: history,
-                                       tzOffsetSeconds: tzOffsetSeconds)
+        let result = DayScorer.analyze(day: day, hr: hr, rr: rr, skinTemp: skinTemp, profile: profile,
+                                       history: history, tzOffsetSeconds: tzOffsetSeconds)
         _ = try await store.upsertDailyMetrics([result.daily], deviceId: Self.deviceId)
         // Sessions are keyed by their start, so a re-score that finds a different start would leave the
         // old one behind. Clear this day's earlier sessions first; hand-edited ones stay.

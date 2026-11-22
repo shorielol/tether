@@ -189,6 +189,20 @@ struct RecoveryDetailTests {
         #expect(detail?.recent.map(\.day) == (16...22).map { String(format: "2026-11-%02d", $0) })
     }
 
+    @Test func skinTemperatureJoinsTheRowsWhenTheNightHasIt() throws {
+        let plain = night(22, hrv: 70, resting: 52)
+        let latest = NightSummary(day: plain.day, sleepStart: 0, sleepEnd: 1, totalSleepMin: 420, efficiency: 0.9,
+                                  deepMin: nil, remMin: nil, lightMin: nil, disturbances: nil, restingHR: 52,
+                                  hrv: 70, respRate: nil, charge: nil, rest: nil, drivers: [], stages: [],
+                                  skinTempC: 33.4, skinTempDevC: nil)
+        let detail = try #require(RecoveryDetail.compute(latest: latest, history: []))
+        let skin = try #require(detail.measures.first { $0.name == "Skin temp" })
+        #expect(skin.value == 33.4)
+        #expect(skin.unit == "°C")
+        let without = try #require(RecoveryDetail.compute(latest: plain, history: []))
+        #expect(!without.measures.contains { $0.name == "Skin temp" })
+    }
+
     @Test func noNightMeansNoRecovery() {
         #expect(RecoveryDetail.compute(latest: nil, history: []) == nil)
     }

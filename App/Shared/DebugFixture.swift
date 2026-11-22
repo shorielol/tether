@@ -95,7 +95,8 @@ enum DebugFixture {
                 drivers: index == 5 ? [.init(label: "HRV", valueText: "6 ms above your average", deltaPoints: 7),
                                        .init(label: "Sleep", valueText: "58 min short of your need", deltaPoints: -5),
                                        .init(label: "Resting HR", valueText: "1 bpm below your average", deltaPoints: 2)] : [],
-                stages: stages)
+                stages: stages, skinTempC: [33.1, 33.3, 32.9, 33.2, 33.0, 33.6][index],
+                skinTempDevC: index >= 3 ? [0.1, -0.1, 0.5][index - 3] : nil)
         }
     }
 

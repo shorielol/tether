@@ -193,7 +193,7 @@ public struct SpO2Sample: Equatable, Codable {
 /// third thermistor rather than a copy; nothing here asserts what they measure, and no analytic reads
 /// them. Both optional: nil on WHOOP 4.0, on any record whose byte failed the decoder's thermal gate,
 /// and on every row banked before the channels were persisted. Mirrors Android `SkinTempRow`.
-public struct SkinTempSample: Equatable, Codable {
+public struct SkinTempSample: Equatable, Codable, Sendable {  // tether: Sendable, plain values only
     public let ts: Int
     public let raw: Int
     public let unit: String     // "raw_adc"
@@ -303,7 +303,7 @@ public enum Whoop4SkinTemp {
     }
 }
 
-public struct RespSample: Equatable, Codable {
+public struct RespSample: Equatable, Codable, Sendable {  // tether: Sendable, plain values only
     public let ts: Int
     public let raw: Int
     public let unit: String     // "raw_adc"
@@ -327,7 +327,7 @@ public struct RespSample: Equatable, Codable {
 /// Optional: nil on WHOOP 4.0 (whose v24/v25 layouts have no such field), on any record whose f32 fell
 /// outside the decoder's `[0, 8] g` gate, and on every row banked before this column existed. Nothing
 /// scores it — see the #520 `DynAccelDiag` summary for the observability half. Mirrors Android `GravityRow`.
-public struct GravitySample: Equatable, Codable {
+public struct GravitySample: Equatable, Codable, Sendable {  // tether: Sendable, plain values only
     public let ts: Int
     public let x: Double
     public let y: Double

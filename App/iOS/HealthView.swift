@@ -17,8 +17,6 @@ struct HealthView: View {
                 Text(HealthVital.summary(vitals)).font(.subheadline).foregroundStyle(TetherBrand.sub)
                 ForEach(vitals) { VitalCard(vital: $0) }
             }
-            PendingVital(name: "Skin temp", status: "coming next",
-                         detail: "Your strap records it. A nightly value against your normal comes in the next update.")
             PendingVital(name: "Blood oxygen", status: "not sent yet",
                          detail: "Your strap hasn't sent blood oxygen yet. If it never does, this will say it isn't available on your strap.")
         }
