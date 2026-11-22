@@ -67,6 +67,35 @@ struct StressDetailTests {
         #expect(detail.dayBand != nil)
     }
 
+    /// A brisk walk 13:00–14:00 looks like stress from heart rate alone; with motion it reads as moving.
+    @Test func aWalkIsMovingNotStressOnceMotionIsKnown() throws {
+        let day = SyntheticDay.streams([(7, 9, 54, 70), (9, 13, 64, 40), (13, 14, 96, 4), (14, 17, 64, 40)])
+        let gravity = stride(from: SyntheticDay.at(7), to: SyntheticDay.at(17), by: 1).map { ts in
+            let walking = ts >= SyntheticDay.at(13) && ts < SyntheticDay.at(14)
+            return GravitySample(ts: ts, x: walking ? (ts.isMultiple(of: 2) ? 0.3 : -0.3) : 0, y: 0.1, z: 0.99)
+        }
+        let heartOnly = StressDetail.compute(hr: day.hr, rr: day.rr, tzOffsetSeconds: 0)
+        #expect(try #require(heartOnly.hours.first { $0.hour == 13 }).band == .high)
+        let withMotion = StressDetail.compute(hr: day.hr, rr: day.rr, gravity: gravity, tzOffsetSeconds: 0)
+        let walk = try #require(withMotion.hours.first { $0.hour == 13 })
+        #expect(walk.wasMoving)
+        #expect(walk.level == nil)
+        #expect(withMotion.movingHours >= 1)
+        #expect(try #require(withMotion.hours.first { $0.hour == 10 }).wasMoving == false)
+    }
+
+    @Test func todaysStressHoursAlsoLeaveTheWalkOut() throws {
+        let day = SyntheticDay.streams([(7, 9, 54, 70), (9, 13, 64, 40), (13, 14, 96, 4), (14, 17, 64, 40)])
+        let gravity = stride(from: SyntheticDay.at(7), to: SyntheticDay.at(17), by: 1).map { ts in
+            let walking = ts >= SyntheticDay.at(13) && ts < SyntheticDay.at(14)
+            return GravitySample(ts: ts, x: walking ? (ts.isMultiple(of: 2) ? 0.3 : -0.3) : 0, y: 0.1, z: 0.99)
+        }
+        let window = SyntheticDay.at(0)...SyntheticDay.at(17)
+        let today = TodayAnalytics.compute(hr: day.hr, rr: day.rr, gravity: gravity, profile: nil, window: window,
+                                           now: SyntheticDay.at(17), tzOffsetSeconds: 0)
+        #expect(try #require(today.stressHours.first { $0.hour == 13 }).wasActive)
+    }
+
     /// India is UTC+5:30, so a local hour straddles two UTC hours. Recording stops at 15:47 local.
     @Test func minutesFollowTheLocalHourInAHalfHourTimeZone() throws {
         let india = 19_800

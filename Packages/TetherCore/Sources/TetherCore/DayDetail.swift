@@ -71,9 +71,12 @@ public struct StressDetail: Sendable, Equatable {
                                            highMinutes: 0, dayLevel: nil, peak: nil, sustainedHighHours: 0,
                                            movingHours: 0)
 
-    public static func compute(hr: [HRSample], rr: [RRInterval], tzOffsetSeconds: Int) -> StressDetail {
+    /// `gravity` is the strap's motion: hours you spent mostly moving read as moving, not as stress.
+    public static func compute(hr: [HRSample], rr: [RRInterval], gravity: [GravitySample] = [],
+                               tzOffsetSeconds: Int) -> StressDetail {
         guard !hr.isEmpty else { return .empty }
-        let result = DaytimeStress.analyze(hr: hr, rr: rr, tzOffsetSeconds: tzOffsetSeconds, includeTimeline: true)
+        let result = DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity.sorted { $0.ts < $1.ts },
+                                           tzOffsetSeconds: tzOffsetSeconds, includeTimeline: true)
         let recorded = Set(hr.map { $0.ts / 60 })
         let hours = result.hours.map { point in
             Hour(hour: point.hour, startTs: point.startTs, level: point.level,

@@ -136,7 +136,7 @@ final class AppModel {
             steps = DebugFixture.steps()
             Task {
                 let day = await Task.detached { DebugFixture.dayStreams() }.value
-                apply(await Self.analyse(hr: day.hr, rr: day.rr, profile: profile, window: day.window,
+                apply(await Self.analyse(hr: day.hr, rr: day.rr, gravity: [], profile: profile, window: day.window,
                                          now: day.window.upperBound))
             }
             return
@@ -167,15 +167,17 @@ final class AppModel {
     }
 
     /// Today's summary plus the stress and effort detail, all off the main actor from one read.
-    private static func analyse(hr: [HRSample], rr: [RRInterval], profile: UserProfile?, window: ClosedRange<Int>,
-                                now: Int) async -> DayAnalysis {
+    private static func analyse(hr: [HRSample], rr: [RRInterval], gravity: [GravitySample], profile: UserProfile?,
+                                window: ClosedRange<Int>, now: Int) async -> DayAnalysis {
         await Task.detached(priority: .utility) {
             let tz = TimeZone.current.secondsFromGMT()
-            let today = TodayAnalytics.compute(hr: hr, rr: rr, profile: profile, window: window, now: now)
+            let today = TodayAnalytics.compute(hr: hr, rr: rr, gravity: gravity, profile: profile, window: window,
+                                               now: now)
             let inWindow = hr.filter { window.contains($0.ts) }
             return DayAnalysis(
                 today: today,
-                stress: StressDetail.compute(hr: inWindow, rr: rr.filter { window.contains($0.ts) }, tzOffsetSeconds: tz),
+                stress: StressDetail.compute(hr: inWindow, rr: rr.filter { window.contains($0.ts) },
+                                             gravity: gravity.filter { window.contains($0.ts) }, tzOffsetSeconds: tz),
                 effort: EffortDetail.compute(hr: inWindow, maxHR: today.maxHR, restingHR: today.restingHR,
                                              sex: profile?.sex.rawValue ?? "male", tzOffsetSeconds: tz))
         }.value
@@ -195,8 +197,9 @@ final class AppModel {
         guard start < now else { return }
         await collector.flush()
         guard let batch = try? await sink.readBack(from: start, to: now, limit: Self.dayReadLimit) else { return }
-        apply(await Self.analyse(hr: batch.streams.hr, rr: batch.streams.rr, profile: profile, window: start...now,
-                                 now: now))
+        let gravity = (try? await sink.gravity(from: start, to: now, limit: Self.dayReadLimit)) ?? []
+        apply(await Self.analyse(hr: batch.streams.hr, rr: batch.streams.rr, gravity: gravity, profile: profile,
+                                 window: start...now, now: now))
         let midnight = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
         if let counted = try? await sink.dailySteps(dayStart: midnight, now: now) { steps = counted }
     }

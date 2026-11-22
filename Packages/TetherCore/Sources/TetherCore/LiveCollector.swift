@@ -73,6 +73,11 @@ public actor WhoopStoreSink: SampleSink {
         let rr = try await store.rrIntervals(deviceId: Self.deviceId, from: from, to: to, limit: limit)
         return SampleBatch(Streams(hr: hr, rr: rr))
     }
+
+    /// The strap's motion between two times, from its history. Empty until a history sync has brought some.
+    public func gravity(from: Int, to: Int, limit: Int = 100_000) async throws -> [GravitySample] {
+        try await openStore().gravitySamples(deviceId: Self.deviceId, from: from, to: to, limit: limit)
+    }
 }
 
 /// The live link the screens watch, and the bridge from the source to storage.

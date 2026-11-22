@@ -103,18 +103,21 @@ public enum DayScorer {
     }
 
     public static func score(day: String, hr: [HRSample], rr: [RRInterval], skinTemp: [SkinTempSample] = [],
-                             profile: UserProfile, history: [DailyMetric], tzOffsetSeconds: Int) -> NightSummary {
-        summary(of: analyze(day: day, hr: hr, rr: rr, skinTemp: skinTemp, profile: profile, history: history,
-                            tzOffsetSeconds: tzOffsetSeconds), day: day)
+                             gravity: [GravitySample] = [], profile: UserProfile, history: [DailyMetric],
+                             tzOffsetSeconds: Int) -> NightSummary {
+        summary(of: analyze(day: day, hr: hr, rr: rr, skinTemp: skinTemp, gravity: gravity, profile: profile,
+                            history: history, tzOffsetSeconds: tzOffsetSeconds), day: day)
     }
 
     static func analyze(day: String, hr: [HRSample], rr: [RRInterval], skinTemp: [SkinTempSample] = [],
-                        profile: UserProfile, history: [DailyMetric],
+                        gravity: [GravitySample] = [], profile: UserProfile, history: [DailyMetric],
                         tzOffsetSeconds: Int) -> AnalyticsEngine.DayResult {
         let sortedHR = hr.sorted { $0.ts < $1.ts }
         let sortedRR = rr.sorted { $0.ts < $1.ts }
+        let sortedGravity = gravity.sorted { $0.ts < $1.ts }
         let fragments = SleepStager.hrOnlySessions(day: day, hr: sortedHR, rr: sortedRR, resp: [])
-        let sleep = joiningTheNight(fragments, day: day, hr: sortedHR, rr: sortedRR, tzOffsetSeconds: tzOffsetSeconds)
+        let joined = joiningTheNight(fragments, day: day, hr: sortedHR, rr: sortedRR, tzOffsetSeconds: tzOffsetSeconds)
+        let sleep = joined.map { withMotion($0, gravity: sortedGravity, hr: sortedHR, rr: sortedRR) }
         return AnalyticsEngine.analyzeDay(
             day: day, hr: sortedHR, rr: sortedRR,
             skinTemp: skinTemp.sorted { $0.ts < $1.ts },
@@ -145,6 +148,26 @@ public enum DayScorer {
                                  restingHR: nil, avgHRV: nil, hrOnly: true)
         let others = fragments.filter { $0.end <= span.lowerBound || $0.start >= span.upperBound }
         return others + [night]
+    }
+
+    /// A night needs motion for at least this share of it before its stages are redrawn with motion.
+    static let motionCoverageNeeded = 0.5
+
+    /// Restages a night with the strap's motion when motion covers most of it. Movement marks real wake-ups
+    /// that heart rate misses, and stillness stops a heart-rate wobble from reading as awake. The night's
+    /// start and end stay as heart rate found them.
+    static func withMotion(_ night: SleepSession, gravity: [GravitySample], hr: [HRSample],
+                           rr: [RRInterval]) -> SleepSession {
+        let inBed = night.end - night.start
+        guard inBed > 0 else { return night }
+        let covered = gravity.lazy.filter { $0.ts >= night.start && $0.ts < night.end }.count
+        guard Double(covered) >= Double(inBed) * motionCoverageNeeded else { return night }
+        let stages = SleepStagerV2.stageSession(start: night.start, end: night.end, grav: gravity,
+                                                hr: hr, rr: rr, resp: [])
+        guard !stages.isEmpty else { return night }
+        let awake = stages.filter { $0.stage == "wake" }.reduce(0) { $0 + $1.end - $1.start }
+        return SleepSession(start: night.start, end: night.end, efficiency: Double(inBed - awake) / Double(inBed),
+                            stages: stages, restingHR: night.restingHR, avgHRV: night.avgHRV, hrOnly: night.hrOnly)
     }
 
     /// Local midnight for a "yyyy-MM-dd" key, as unix seconds.
@@ -227,8 +250,10 @@ extension WhoopStoreSink {
                                                        to: window.upperBound, limit: Self.scoringReadLimit)
         let history = try await store.dailyMetrics(deviceId: Self.deviceId, from: "0000-01-01", to: day)
             .filter { $0.day < day }
-        let result = DayScorer.analyze(day: day, hr: hr, rr: rr, skinTemp: skinTemp, profile: profile,
-                                       history: history, tzOffsetSeconds: tzOffsetSeconds)
+        let gravity = try await store.gravitySamples(deviceId: Self.deviceId, from: window.lowerBound,
+                                                     to: window.upperBound, limit: Self.scoringReadLimit)
+        let result = DayScorer.analyze(day: day, hr: hr, rr: rr, skinTemp: skinTemp, gravity: gravity,
+                                       profile: profile, history: history, tzOffsetSeconds: tzOffsetSeconds)
         _ = try await store.upsertDailyMetrics([result.daily], deviceId: Self.deviceId)
         // Sessions are keyed by their start, so a re-score that finds a different start would leave the
         // old one behind. Clear this day's earlier sessions first; hand-edited ones stay.

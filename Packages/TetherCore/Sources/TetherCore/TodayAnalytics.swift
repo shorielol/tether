@@ -87,7 +87,7 @@ public enum TodayAnalytics {
     public static let chartGapSeconds = 120
     private static let fallbackAge = 30.0
 
-    public static func compute(hr: [HRSample], rr: [RRInterval], profile: UserProfile?,
+    public static func compute(hr: [HRSample], rr: [RRInterval], gravity: [GravitySample] = [], profile: UserProfile?,
                                window: ClosedRange<Int>, now: Int,
                                tzOffsetSeconds: Int = TimeZone.current.secondsFromGMT()) -> TodaySnapshot {
         let samples = hr.filter { window.contains($0.ts) }.sorted { $0.ts < $1.ts }
@@ -110,7 +110,9 @@ public enum TodayAnalytics {
                                        hrmax: Double(maxHR), restingHR: Double(resting))
         }
         let hrvNow = HRVAnalyzer.analyze(beats, windowStart: now - hrvWindowSeconds + 1, windowEnd: now).rmssd
-        let stress = DaytimeStress.analyze(hr: samples, rr: beats, tzOffsetSeconds: tzOffsetSeconds).hours.map {
+        let moves = gravity.filter { window.contains($0.ts) }.sorted { $0.ts < $1.ts }
+        let stress = DaytimeStress.analyze(hr: samples, rr: beats, gravity: moves,
+                                           tzOffsetSeconds: tzOffsetSeconds).hours.map {
             TodaySnapshot.StressHour(hour: $0.hour, level: $0.level, wasActive: $0.maskedForActivity)
         }
         let coverageEnd = max(window.lowerBound, min(now, window.upperBound))
