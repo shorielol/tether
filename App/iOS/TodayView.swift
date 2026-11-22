@@ -69,7 +69,8 @@ struct TodayView: View {
                 .padding(.vertical, 6)
             if let today = model.today, !today.isEmpty {
                 DetailLink(.effort) {
-                    TodayRibbon(today: today, sleep: Self.sleepSpan(night), now: Int(Date.now.timeIntervalSince1970))
+                    TodayRibbon(today: today, sleep: Self.sleepSpan(night), now: Int(Date.now.timeIntervalSince1970),
+                                live: model.liveHeartRate, beat: model.collector.lastSampleAt)
                 }
             } else {
                 NotYet(title: model.collector.isPaired ? "Collecting your first minutes" : "Not recording yet",

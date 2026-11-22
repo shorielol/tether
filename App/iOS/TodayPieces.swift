@@ -158,12 +158,16 @@ struct TodayRibbon: View {
     let today: TodaySnapshot
     let sleep: ClosedRange<Int>?
     let now: Int
+    /// Live heart rate while the strap is connected; nil shows the day's range instead.
+    var live: Int?
+    /// Changes with every sample, so the heart beats as they arrive.
+    var beat: Int?
 
     private var dayStart: Int {
         Int(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(today.window.lowerBound))).timeIntervalSince1970)
     }
     private var yDomain: ClosedRange<Double> {
-        let values = today.minuteSeries.map(\.bpm)
+        let values = today.minuteSeries.map(\.bpm) + [live.map(Double.init)].compactMap { $0 }
         let low = max(30, ((values.min() ?? 50) - 12).rounded(.down))
         return low...max(low + 60, ((values.max() ?? 120) + 6).rounded(.up))
     }
@@ -173,7 +177,17 @@ struct TodayRibbon: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Your day").font(.headline)
                 Spacer()
-                if let low = today.minBPM, let high = today.maxBPM {
+                if let live {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Image(systemName: "heart.fill").font(.footnote).foregroundStyle(TetherBrand.ember)
+                            .symbolEffect(.bounce, value: beat)
+                        Text("\(live)").font(.headline).monospacedDigit().contentTransition(.numericText())
+                        Text("bpm now").font(.footnote).foregroundStyle(TetherBrand.sub)
+                    }
+                    .animation(.smooth, value: live)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Heart rate now, \(live) beats per minute")
+                } else if let low = today.minBPM, let high = today.maxBPM {
                     Text("\(low)–\(high) bpm").font(.footnote).foregroundStyle(TetherBrand.sub).monospacedDigit()
                 }
                 DetailChevron()
@@ -209,6 +223,11 @@ struct TodayRibbon: View {
             RuleMark(x: .value("Now", date(now)))
                 .foregroundStyle(Color.white.opacity(0.3))
                 .lineStyle(StrokeStyle(lineWidth: 1))
+            if let live {
+                PointMark(x: .value("Now", date(now)), y: .value("Heart rate now", Double(live)))
+                    .foregroundStyle(TetherBrand.ember)
+                    .symbolSize(44)
+            }
         }
         .chartXScale(domain: date(dayStart)...date(dayStart + 86_400))
         .chartYScale(domain: domain)

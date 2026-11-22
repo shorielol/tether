@@ -116,12 +116,12 @@ final class AppModel {
         try? await center.add(UNNotificationRequest(identifier: Self.expiryReminderId, content: content, trigger: trigger))
     }
 
-    /// Live heart rate for the hero card.
+    /// Live heart rate while the strap is connected; nil otherwise, so a stale reading never shows as live.
     var liveHeartRate: Int? {
         #if DEBUG
         if let fixture = DebugFixture.liveHeartRate { return fixture }
         #endif
-        return collector.heartRate
+        return collector.link == .connected ? collector.heartRate : nil
     }
 
     func startTodayUpdates() {
