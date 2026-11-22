@@ -1,10 +1,43 @@
 import SwiftUI
 import TetherCore
 
+/// The screens a Today card opens.
+enum TodayDetail: String, Hashable {
+    case stress, effort, recovery
+}
+
 struct TodayView: View {
     @Environment(AppModel.self) private var model
+    @State private var path = TodayView.initialPath
 
     var body: some View {
+        NavigationStack(path: $path) {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: TodayDetail.self) { detail in
+                    destination(detail)
+                        .background(TetherBrand.ink)
+                        .toolbarBackground(TetherBrand.ink, for: .navigationBar)
+                }
+        }
+    }
+
+    @ViewBuilder private func destination(_ detail: TodayDetail) -> some View {
+        switch detail {
+        case .stress:
+            StressDetailView(detail: model.stress ?? .empty)
+        case .effort:
+            if let today = model.today, let effort = model.effort {
+                EffortDetailView(today: today, detail: effort)
+            } else {
+                TabScreen { NotYet(title: "No heart rate yet today", detail: "Effort and zones fill in as the strap records.").card() }
+            }
+        case .recovery:
+            RecoveryDetailView(detail: model.recovery, progress: model.baseline)
+        }
+    }
+
+    private var content: some View {
         TabScreen {
             ScreenHeader(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)), title: "Today") {
                 if model.collector.isPaired { LivePill() }
@@ -12,13 +45,13 @@ struct TodayView: View {
             if let today = model.today, !today.isEmpty {
                 LiveHeroCard(today: today, liveBPM: model.liveHeartRate)
                 HStack(alignment: .top, spacing: 14) {
-                    EffortCard(today: today)
+                    DetailLink(.effort) { EffortCard(today: today) }
                     CaloriesCard(today: today)
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                HeartRateDayCard(today: today)
-                ZonesCard(today: today)
-                StressCard(today: today)
+                DetailLink(.effort) { HeartRateDayCard(today: today) }
+                DetailLink(.effort) { ZonesCard(today: today) }
+                DetailLink(.stress) { StressCard(today: today) }
                 CoverageRow(today: today)
             } else if model.collector.isPaired {
                 NotYet(title: "Collecting your first minutes",
@@ -32,9 +65,11 @@ struct TodayView: View {
                 LastNightRow(night: night)
             }
             if let charge = (model.latestNight ?? model.lastNight)?.charge {
-                ChargeCard(charge: charge, drivers: (model.latestNight ?? model.lastNight)?.drivers ?? [])
+                DetailLink(.recovery) {
+                    ChargeCard(charge: charge, drivers: (model.latestNight ?? model.lastNight)?.drivers ?? [])
+                }
             } else {
-                BaselineRow(progress: model.baseline)
+                DetailLink(.recovery) { BaselineRow(progress: model.baseline) }
             }
             if let saved = model.lastSavedAt, let folder = model.folderName {
                 Text("Saved to iCloud Drive / \(folder) at \(saved.formatted(date: .omitted, time: .shortened))")
@@ -42,6 +77,35 @@ struct TodayView: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private static var initialPath: [TodayDetail] {
+        #if DEBUG
+        // Screenshot runs pass `-tether.debugDetail stress` to open a detail screen directly.
+        if let name = UserDefaults.standard.string(forKey: "tether.debugDetail"), let detail = TodayDetail(rawValue: name) {
+            return [detail]
+        }
+        #endif
+        return []
+    }
+}
+
+/// A Today card that opens a detail screen: the whole card is the tap target, and it shows a chevron.
+struct DetailLink<Label: View>: View {
+    let detail: TodayDetail
+    @ViewBuilder var label: Label
+
+    init(_ detail: TodayDetail, @ViewBuilder label: () -> Label) {
+        self.detail = detail
+        self.label = label()
+    }
+
+    var body: some View {
+        NavigationLink(value: detail) {
+            label.environment(\.opensDetail, true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens more detail")
     }
 }
 

@@ -88,7 +88,11 @@ struct EffortCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Effort").font(.headline)
+            HStack {
+                Text("Effort").font(.headline)
+                Spacer(minLength: 0)
+                DetailChevron()
+            }
             ZStack {
                 Circle().stroke(TetherBrand.track, lineWidth: 9)
                 Circle()
@@ -152,6 +156,7 @@ struct HeartRateDayCard: View {
                 Text("Heart rate today").font(.headline)
                 Spacer()
                 Text("since \(start)").font(.caption).foregroundStyle(TetherBrand.sub)
+                DetailChevron()
             }
             Chart(today.minuteSeries) { point in
                 LineMark(x: .value("Time", Date(timeIntervalSince1970: TimeInterval(point.ts))),
@@ -210,6 +215,7 @@ struct ZonesCard: View {
                 Spacer()
                 Text("\(today.zoneMinutes.reduce(0, +)) min above 50% of max")
                     .font(.caption).foregroundStyle(TetherBrand.sub).monospacedDigit()
+                DetailChevron()
             }
             GeometryReader { geo in
                 HStack(spacing: 2) {
@@ -250,6 +256,7 @@ struct StressCard: View {
                 Text("Stress by hour").font(.headline)
                 Spacer()
                 Text(summary).font(.caption).foregroundStyle(TetherBrand.sub)
+                DetailChevron()
             }
             if today.stressHours.isEmpty {
                 Text("Needs about 5 minutes of steady heart rate in an hour to read it.")
@@ -371,6 +378,8 @@ struct BaselineRow: View {
                 Text("Sleep and Charge are scored each morning from the night before.")
                     .font(.caption).foregroundStyle(TetherBrand.sub)
             }
+            Spacer(minLength: 0)
+            DetailChevron()
         }
         .card(padding: 14)
         .accessibilityElement(children: .combine)

@@ -166,6 +166,8 @@ struct ChargeCard: View {
                 HStack(spacing: 6) {
                     Circle().fill(TetherBrand.charge(zone)).frame(width: 8, height: 8)
                     Text(zone.name).font(.subheadline.weight(.semibold)).foregroundStyle(TetherBrand.charge(zone))
+                    Spacer(minLength: 0)
+                    DetailChevron()
                 }
                 .accessibilityElement(children: .combine)
                 Text(zone.advice).font(.headline)

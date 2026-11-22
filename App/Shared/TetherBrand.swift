@@ -133,3 +133,22 @@ struct NotYet: View {
         }
     }
 }
+
+extension EnvironmentValues {
+    /// Set on a card wrapped in a link to a detail screen, so it shows a chevron.
+    @Entry var opensDetail = false
+}
+
+/// The small chevron on a card that opens a detail screen. Hidden everywhere else.
+struct DetailChevron: View {
+    @Environment(\.opensDetail) private var opensDetail
+
+    var body: some View {
+        if opensDetail {
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(TetherBrand.sub)
+                .accessibilityHidden(true)
+        }
+    }
+}

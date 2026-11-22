@@ -12,6 +12,12 @@ enum DebugFixture {
 
     static func today(profile: UserProfile?) -> TodaySnapshot? {
         guard isOn else { return nil }
+        let day = dayStreams()
+        return TodayAnalytics.compute(hr: day.hr, rr: day.rr, profile: profile, window: day.window, now: day.window.upperBound)
+    }
+
+    /// The sample day's heart rate and beats: a calm late morning, a tense mid-afternoon, a run at 6 PM.
+    static func dayStreams() -> (hr: [HRSample], rr: [RRInterval], window: ClosedRange<Int>) {
         let midnight = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
         let end = midnight + 21 * 3_600
         var hr: [HRSample] = []
@@ -22,9 +28,19 @@ enum DebugFixture {
             let bpm = Int(base(hour) + 3 * sin(Double(ts) / 97) + 2 * sin(Double(ts) / 13))
             hr.append(HRSample(ts: ts, bpm: bpm))
             let beat = 60_000 / max(bpm, 40)
-            rr.append(RRInterval(ts: ts, rrMs: beat + (ts.isMultiple(of: 2) ? 18 : -18), ord: 0, seq: 0))
+            let spread = spread(hour)
+            rr.append(RRInterval(ts: ts, rrMs: beat + (ts.isMultiple(of: 2) ? spread : -spread), ord: 0, seq: 0))
         }
-        return TodayAnalytics.compute(hr: hr, rr: rr, profile: profile, window: midnight...end, now: end)
+        return (hr, rr, midnight...end)
+    }
+
+    /// Beat-to-beat spread: wide when relaxed, narrow when tense.
+    private static func spread(_ hour: Double) -> Int {
+        switch hour {
+        case 10..<12: 40
+        case 15..<17: 6
+        default: 18
+        }
     }
 
     /// Six sample nights ending last night; Charge appears from the fourth, as it would for real.
@@ -61,6 +77,7 @@ enum DebugFixture {
         switch hour {
         case ..<7: 52
         case ..<9: 78
+        case 15..<17: 86
         case 18..<18.7: 156
         case 18.7..<19: 120
         default: 74

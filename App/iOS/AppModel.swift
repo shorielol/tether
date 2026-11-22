@@ -5,6 +5,7 @@ import TetherFiles
 import TetherSnapshot
 import UIKit
 import UserNotifications
+@preconcurrency import WhoopProtocol
 import WidgetKit
 
 /// Owns the one collector for the app's lifetime and the phone-side state the screens read.
@@ -29,6 +30,9 @@ final class AppModel {
     private let sink: WhoopStoreSink
     /// Today's analytics from stored samples, refreshed every 30 s while the app is open.
     private(set) var today: TodaySnapshot?
+    /// Today's stress and effort in depth, computed alongside `today` from the same samples.
+    private(set) var stress: StressDetail?
+    private(set) var effort: EffortDetail?
     @ObservationIgnored private var todayLoop: Task<Void, Never>?
     /// Scored nights, oldest first (last 30 days).
     private(set) var nights: [NightSummary] = []
@@ -80,6 +84,9 @@ final class AppModel {
         return nights.last { $0.sleepStart != nil }
     }
 
+    /// Last night against your normal, from the nights already loaded.
+    var recovery: RecoveryDetail? { RecoveryDetail.compute(latest: lastNight, history: nights) }
+
     var installExpiry: InstallExpiry.Status? { InstallExpiry.current() }
 
     func finishOnboarding(profile: UserProfile, strap: UUID?) {
@@ -119,7 +126,11 @@ final class AppModel {
             nights = DebugFixture.nights()
             latestNight = nights.last
             scoredNightCount = nights.count
-            Task { today = await Task.detached { DebugFixture.today(profile: profile) }.value }
+            Task {
+                let day = await Task.detached { DebugFixture.dayStreams() }.value
+                apply(await Self.analyse(hr: day.hr, rr: day.rr, profile: profile, window: day.window,
+                                         now: day.window.upperBound))
+            }
             return
         }
         #endif
@@ -141,6 +152,33 @@ final class AppModel {
         todayLoop = nil
     }
 
+    private struct DayAnalysis: Sendable {
+        let today: TodaySnapshot
+        let stress: StressDetail
+        let effort: EffortDetail
+    }
+
+    /// Today's summary plus the stress and effort detail, all off the main actor from one read.
+    private static func analyse(hr: [HRSample], rr: [RRInterval], profile: UserProfile?, window: ClosedRange<Int>,
+                                now: Int) async -> DayAnalysis {
+        await Task.detached(priority: .utility) {
+            let tz = TimeZone.current.secondsFromGMT()
+            let today = TodayAnalytics.compute(hr: hr, rr: rr, profile: profile, window: window, now: now)
+            let inWindow = hr.filter { window.contains($0.ts) }
+            return DayAnalysis(
+                today: today,
+                stress: StressDetail.compute(hr: inWindow, rr: rr.filter { window.contains($0.ts) }, tzOffsetSeconds: tz),
+                effort: EffortDetail.compute(hr: inWindow, maxHR: today.maxHR, restingHR: today.restingHR,
+                                             sex: profile?.sex.rawValue ?? "male", tzOffsetSeconds: tz))
+        }.value
+    }
+
+    private func apply(_ analysis: DayAnalysis) {
+        today = analysis.today
+        stress = analysis.stress
+        effort = analysis.effort
+    }
+
     /// Reads today's samples (from midnight, or from pairing if later) and recomputes off the main actor.
     func refreshToday() async {
         guard let pairedAt = collector.pairedAt else { today = nil; return }
@@ -149,11 +187,8 @@ final class AppModel {
         guard start < now else { return }
         await collector.flush()
         guard let batch = try? await sink.readBack(from: start, to: now, limit: Self.dayReadLimit) else { return }
-        let profile = profile
-        today = await Task.detached(priority: .utility) {
-            TodayAnalytics.compute(hr: batch.streams.hr, rr: batch.streams.rr, profile: profile,
-                                   window: start...now, now: now)
-        }.value
+        apply(await Self.analyse(hr: batch.streams.hr, rr: batch.streams.rr, profile: profile, window: start...now,
+                                 now: now))
     }
 
     /// Scores every night since pairing that hasn't been scored, plus yesterday and today again (their

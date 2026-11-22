@@ -92,6 +92,15 @@ for f in "$PROFILES"/*.mobileprovision; do
   done
 done
 
+# The .xcodeproj is generated and git-ignored, so regenerate it from project.yml: a copy that only
+# pulls from git would otherwise build with a stale file list and miss new screens.
+XCODEGEN=$(command -v xcodegen || echo /opt/homebrew/bin/xcodegen)
+if [ -x "$XCODEGEN" ] && ! "$XCODEGEN" generate --quiet; then
+  echo "xcodegen failed"
+  notify "Tether couldn't regenerate its Xcode project. Run xcodegen in the repo once to see why."
+  exit 1
+fi
+
 if ! xcodebuild -project Tether.xcodeproj -scheme TetherPhone -configuration Release \
      -destination "id=$DEVICE" -derivedDataPath "$BUILD_DIR" -allowProvisioningUpdates build -quiet; then
   echo "build failed"
