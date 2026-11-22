@@ -191,7 +191,7 @@ public final class StandardHRSource: NSObject, HeartDataSource {
     }
 
     public func sendStrapCommand(_ frame: [UInt8]) {
-        guard dataLinkReady, let peripheral, let dataCommandChar else { return }
+        guard StrapCommandPolicy.allows(frame), dataLinkReady, let peripheral, let dataCommandChar else { return }
         peripheral.writeValue(Data(frame), for: dataCommandChar, type: .withResponse)
     }
 

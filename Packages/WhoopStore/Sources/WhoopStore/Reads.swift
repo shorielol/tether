@@ -491,10 +491,19 @@ extension WhoopStore {
                         arguments: [deviceId, RRSourceChannel.whoop4Historical.rawValue]) ?? false
                 }
             }
-            let whoop5SourcePredicate = """
-                srcChannel = (SELECT MIN(srcChannel) FROM rrInterval
+            // tether: one WHOOP 5 scoring transport per UTC hour, the one that banked more beats in that
+            // hour of the requested window (a tie goes to history, 5). The upstream rule pinned the WHOOP
+            // window to the lowest channel present anywhere in it, so one stretch of synced history
+            // erased a whole night of live beats and scored it blank.
+            let whoop5HourChoice = """
+                WITH whoop5HourChoice AS MATERIALIZED (
+                    SELECT ts / 3600 AS hour,
+                           CASE WHEN SUM(srcChannel = 5) >= SUM(srcChannel = 7) THEN 5 ELSE 7 END AS chosen
+                    FROM rrInterval
                     WHERE deviceId = :d AND ts >= :f AND ts <= :t AND srcChannel IN \(Self.scorableWhoop5Channels)
-                    AND (tsSuspect IS NULL OR tsSuspect <> 1))
+                      AND (tsSuspect IS NULL OR tsSuspect <> 1)
+                    GROUP BY ts / 3600
+                )
                 """
             // The WHOOP 4 source decision is per UTC hour. Materialize one choice per hour, then join
             // that small result to the requested beats. Counting the same hour from every beat made
@@ -530,12 +539,13 @@ extension WhoopStore {
                     """
             } else if strictWhoop5 {
                 sql = """
-                    SELECT ts, rrMs, srcChannel, ord, seq FROM rrInterval
-                    WHERE deviceId = :d AND ts >= :f AND ts <= :t
-                    AND (srcChannel IS NULL OR srcChannel <> :rrx)
-                    AND \(whoop5SourcePredicate)
-                    AND (tsSuspect IS NULL OR tsSuspect <> 1)   -- exclude future-stamped (#1073) and 500 ms fill (#2371) beats
-                    ORDER BY ts ASC, ord ASC, rrMs ASC, seq ASC LIMIT :lim
+                    \(whoop5HourChoice)
+                    SELECT r.ts, r.rrMs, r.srcChannel, r.ord, r.seq FROM rrInterval r
+                    JOIN whoop5HourChoice h ON h.hour = r.ts / 3600 AND r.srcChannel = h.chosen
+                    WHERE r.deviceId = :d AND r.ts >= :f AND r.ts <= :t
+                    AND (r.srcChannel IS NULL OR r.srcChannel <> :rrx)
+                    AND (r.tsSuspect IS NULL OR r.tsSuspect <> 1)   -- exclude future-stamped (#1073) and 500 ms fill (#2371) beats
+                    ORDER BY r.ts ASC, r.ord ASC, r.rrMs ASC, r.seq ASC LIMIT :lim
                     """
             } else {
                 // One Oura channel per UTC hour, counted inside the requested window. LEFT JOIN: only

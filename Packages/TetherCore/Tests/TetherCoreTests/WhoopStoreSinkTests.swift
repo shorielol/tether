@@ -33,4 +33,22 @@ struct WhoopStoreSinkTests {
         #expect(back.hr.map(\.bpm) == [58])
         #expect(back.rr.map(\.rrMs) == [1_030])
     }
+
+    /// The 22 Nov bug: beats saved before live beats were labelled vanished from scoring once the
+    /// strap's history arrived. Opening the store labels them, so the night reads back whole.
+    @Test func oldUnlabelledBeatsStillReadBackAfterHistoryArrives() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tether-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("tether.sqlite").path
+        let old = try await WhoopStore(path: path)
+        _ = try await old.insert(Streams(rr: [RRInterval(ts: 1_000, rrMs: 1_030, ord: 0, seq: 0),
+                                              RRInterval(ts: 1_001, rrMs: 1_010, ord: 0, seq: 0)]),
+                                 deviceId: WhoopStoreSink.deviceId)
+        _ = try await old.insert(Streams(rr: [RRInterval(ts: 50_000, rrMs: 900, srcChannel: .whoop5Historical)]),
+                                 deviceId: WhoopStoreSink.deviceId)
+        let sink = WhoopStoreSink(path: path)
+        let back = try await sink.readBack(from: 0, to: 2_000).streams
+        #expect(back.rr.map(\.rrMs) == [1_030, 1_010])
+    }
 }

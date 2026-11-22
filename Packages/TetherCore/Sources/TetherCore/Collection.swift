@@ -33,7 +33,9 @@ public struct SampleBatcher {
         for (order, rrMs) in measurement.rrMs.enumerated() {
             let seq = seqInSecond[ts, default: 0]
             seqInSecond[ts] = seq + 1
-            rr.append(RRInterval(ts: ts, rrMs: rrMs, ord: order, seq: seq))
+            // Labelled as the strap's standard heart-rate link, so the store scores these beats beside
+            // the strap's own history instead of dropping them as an unknown source.
+            rr.append(RRInterval(ts: ts, rrMs: rrMs, srcChannel: .whoop5Standard, ord: order, seq: seq))
         }
     }
 

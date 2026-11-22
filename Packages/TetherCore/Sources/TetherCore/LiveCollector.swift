@@ -46,6 +46,9 @@ public actor WhoopStoreSink: SampleSink {
         if let store { return store }
         let opened = try await WhoopStore(path: path)
         try await opened.upsertDevice(id: Self.deviceId, mac: nil, name: "WHOOP 5.0")
+        // Beats saved before live R-R carried a source label would otherwise drop out of scoring once
+        // the strap's history arrives. Only unlabelled rows change, so this is a no-op after the first run.
+        _ = try await opened.labelLegacyRR(deviceId: Self.deviceId, as: .whoop5Standard)
         store = opened
         return opened
     }
@@ -103,11 +106,14 @@ public final class LiveCollector {
     @ObservationIgnored private var autoFlush: Task<Void, Never>?
     @ObservationIgnored private var history: StrapHistorySession?
     @ObservationIgnored private var historyIdle: Task<Void, Never>?
+    @ObservationIgnored private var historyTicker: Task<Void, Never>?
 
     private static let pairedAtKey = "tether.pairedAt"
     private static let lastHistorySyncKey = "tether.history.lastSync"
     /// A ready data link syncs on its own when the last sync is at least this old.
-    public static let historySyncInterval = 3 * 3_600
+    public static let historySyncInterval = 30 * 60
+    /// While the link stays up, how often to check whether a sync is due.
+    static let heartbeatSeconds = 5 * 60
 
     public init(source: any HeartDataSource, sink: any SampleSink, defaults: UserDefaults = .standard,
                 now: @escaping () -> Int = { Int(Date().timeIntervalSince1970) }) {
@@ -139,7 +145,10 @@ public final class LiveCollector {
         let sink = self.sink
         let session = StrapHistorySession(
             cutoff: OwnershipCutoff(pairedAt: pairedAt),
-            write: { [weak self] frame in self?.source.sendStrapCommand(frame) },
+            write: { [weak self] frame in
+                guard StrapCommandPolicy.allows(frame) else { return }
+                self?.source.sendStrapCommand(frame)
+            },
             save: { streams in try await sink.writeHistory(SampleBatch(streams)) },
             now: now)
         session.onFinish = { [weak self] outcome in self?.finishHistory(outcome) }
@@ -152,6 +161,23 @@ public final class LiveCollector {
     private func syncHistoryIfDue() {
         if let last = lastHistorySync, now() - last < Self.historySyncInterval { return }
         syncHistoryNow()
+    }
+
+    /// Called every few minutes while the data link is up, so history keeps arriving without a reconnect.
+    func historyHeartbeat() {
+        guard dataLink == .ready else { return }
+        syncHistoryIfDue()
+    }
+
+    private func startHistoryHeartbeat() {
+        historyTicker?.cancel()
+        historyTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.heartbeatSeconds))
+                guard !Task.isCancelled else { return }
+                self?.historyHeartbeat()
+            }
+        }
     }
 
     /// The strap stopped sending mid-sync. The idle timer calls this; tests call it directly.
@@ -292,7 +318,14 @@ public final class LiveCollector {
             firmware = version
         case .dataLink(let state):
             dataLink = state
-            if state == .ready { syncHistoryIfDue() } else { historyWentQuiet() }
+            if state == .ready {
+                syncHistoryIfDue()
+                startHistoryHeartbeat()
+            } else {
+                historyTicker?.cancel()
+                historyTicker = nil
+                historyWentQuiet()
+            }
         case .strapFrame(let frame):
             guard let history else { return }
             history.receive(frame)

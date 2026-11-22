@@ -168,15 +168,20 @@ final class Whoop5RRStoreTests: XCTestCase {
     func testSourceSelectionPrecedesLimitAndSharesBoundsAndQuarantine() async throws {
         let s = try await WhoopStore.inMemory()
         try registry(s, model: "5.0 MG")
-        let rows = (100..<200).map { RRInterval(ts: $0, rrMs: 1000, srcChannel: .whoop5Standard) }
-            + [RRInterval(ts: 200, rrMs: 900, srcChannel: .whoop5Historical),
-               RRInterval(ts: 201, rrMs: 800, srcChannel: .whoop5Realtime)]
+        // tether: the source is now chosen per hour by beat count (TetherHourlySourceTests), so history
+        // is made the fuller source here; what this test guards (choice before LIMIT, bounds, quarantine,
+        // realtime never scored) is unchanged.
+        let rows = (100..<110).map { RRInterval(ts: $0, rrMs: 1000, srcChannel: .whoop5Standard) }
+            + (110..<130).map { RRInterval(ts: $0, rrMs: 900, srcChannel: .whoop5Historical) }
+            + [RRInterval(ts: 201, rrMs: 800, srcChannel: .whoop5Realtime)]
         _ = try await s.insert(Streams(rr: rows), deviceId: id)
         var selected = try await read(s, limit: 1)
         XCTAssertEqual(selected.map(\.rrMs), [900], "historical source must be chosen before LIMIT")
-        selected = try await read(s, to: 199, limit: 1)
+        selected = try await read(s, to: 109, limit: 1)
         XCTAssertEqual(selected.map(\.rrMs), [1000], "history outside this interval cannot select its source")
-        try await s.registryWriter.write { db in try db.execute(sql: "UPDATE rrInterval SET tsSuspect = 1 WHERE ts = 200") }
+        try await s.registryWriter.write { db in
+            try db.execute(sql: "UPDATE rrInterval SET tsSuspect = 1 WHERE ts BETWEEN 110 AND 129")
+        }
         selected = try await read(s, limit: 1)
         XCTAssertEqual(selected.map(\.rrMs), [1000], "suspect-only history cannot suppress the valid fallback")
         selected = try await read(s, from: 201)

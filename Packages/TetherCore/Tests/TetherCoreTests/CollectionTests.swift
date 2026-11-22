@@ -28,6 +28,12 @@ struct SampleBatcherTests {
         #expect(streams.rr.map(\.ts) == [100, 101, 101])
     }
 
+    @Test func liveBeatsAreLabelledAsTheStrapsStandardHeartRateLink() {
+        var batcher = SampleBatcher(cutoff: OwnershipCutoff(pairedAt: 0))
+        batcher.append(m(60, [1000, 990]), at: 100)
+        #expect(batcher.drain().rr.map(\.srcChannel) == [.whoop5Standard, .whoop5Standard])
+    }
+
     @Test func beatsInTheSameSecondGetDistinctOrderAndSequence() {
         var batcher = SampleBatcher(cutoff: OwnershipCutoff(pairedAt: 0))
         batcher.append(m(70, [850, 850]), at: 200)

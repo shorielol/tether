@@ -32,25 +32,6 @@ enum SleepFormat {
     }
 }
 
-struct NightHeroCard: View {
-    let night: NightSummary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(SleepFormat.duration(minutes: night.totalSleepMin))
-                .font(.system(size: 44, weight: .bold)).monospacedDigit()
-            Text("\(SleepFormat.time(night.sleepStart)) – \(SleepFormat.time(night.sleepEnd))")
-                .font(.headline).foregroundStyle(TetherBrand.sub).monospacedDigit()
-            if let efficiency = night.efficiency {
-                Text("\(Int((efficiency * 100).rounded()))% of the time in bed asleep")
-                    .font(.subheadline).foregroundStyle(TetherBrand.sub)
-            }
-        }
-        .card()
-        .accessibilityElement(children: .combine)
-    }
-}
-
 /// The night as one stepped path: a lane per stage (Awake at the top, Deep at the bottom), thin
 /// lines joining each change, then each stage's share of the night in the same top-to-bottom order.
 struct HypnogramCard: View {
@@ -173,85 +154,6 @@ struct HypnogramCard: View {
         let parts = Self.order.map { "\(SleepFormat.name($0)) \(DayLine.duration(minutes($0)))" }
         return "Sleep stages through the night: " + parts.joined(separator: ", ")
     }
-}
-
-struct NightVitalsCard: View {
-    let night: NightSummary
-
-    var body: some View {
-        Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 14) {
-            GridRow {
-                Metric(label: "Resting HR", value: night.restingHR.map { "\($0) bpm" } ?? "–")
-                Metric(label: "HRV", value: night.hrv.map { "\(Int($0.rounded())) ms" } ?? "–")
-            }
-            GridRow {
-                Metric(label: "Breathing", value: night.respRate.map { String(format: "%.1f /min", $0) } ?? "–",
-                       note: "from R-R")
-                Metric(label: "Disturbances", value: night.disturbances.map(String.init) ?? "–")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card()
-    }
-}
-
-struct ChargeOrCountdown: View {
-    let night: NightSummary
-    let progress: BaselineProgress
-
-    var body: some View {
-        if let charge = night.charge {
-            ChargeCard(charge: charge, drivers: night.drivers)
-        } else {
-            NotYet(title: progress.chargeLabel,
-                   detail: "\(progress.scoredNights) of \(BaselineProgress.chargeNights) nights recorded. Charge compares each night with your own baseline, so it waits until it has one.")
-                .card()
-        }
-    }
-}
-
-struct ChargeCard: View {
-    let charge: Double
-    let drivers: [NightSummary.Driver]
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 18) {
-            ZStack {
-                Circle().stroke(TetherBrand.track, lineWidth: 12)
-                Circle().trim(from: 0, to: charge / 100)
-                    .stroke(TetherBrand.charge(zone), style: .init(lineWidth: 12, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: 0) {
-                    Text("\(Int(charge.rounded()))").font(.system(size: 34, weight: .bold)).monospacedDigit()
-                    Text("Charge").font(.caption.weight(.semibold)).foregroundStyle(TetherBrand.sub)
-                }
-            }
-            .frame(width: 112, height: 112)
-            .accessibilityElement(children: .combine)
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Circle().fill(TetherBrand.charge(zone)).frame(width: 8, height: 8)
-                    Text(zone.name).font(.subheadline.weight(.semibold)).foregroundStyle(TetherBrand.charge(zone))
-                    Spacer(minLength: 0)
-                    DetailChevron()
-                }
-                .accessibilityElement(children: .combine)
-                Text(zone.advice).font(.headline)
-                ForEach(drivers.prefix(3)) { driver in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: driver.deltaPoints >= 0 ? "arrow.up.right" : "arrow.down.right")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(driver.deltaPoints >= 0 ? TetherBrand.good : TetherBrand.headsUp)
-                        Text("\(driver.label): \(driver.valueText)").font(.subheadline).foregroundStyle(TetherBrand.sub)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-        .card()
-    }
-
-    private var zone: ChargeZone { ChargeZone(charge: charge) }
 }
 
 struct RecentNightsCard: View {

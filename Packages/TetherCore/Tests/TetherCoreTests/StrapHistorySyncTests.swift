@@ -86,6 +86,36 @@ struct StrapHistorySyncTests {
         #expect(source.historyRequests == 2)
     }
 
+    /// While the strap stays connected, history keeps coming without pressing Sync now.
+    @Test func whileConnectedASyncStartsOnItsOwnOnceTheLastIsHalfAnHourOld() {
+        final class Clock { var now = 0 }
+        let clock = Clock()
+        clock.now = now
+        let source = FakeDataLinkSource()
+        let defaults = makeDefaults()
+        let pairing = LiveCollector(source: source, sink: FakeSink(), defaults: defaults, now: { now - 3_600 })
+        pairing.pair(with: UUID())
+        let collector = LiveCollector(source: source, sink: FakeSink(), defaults: defaults, now: { clock.now })
+        source.send(.dataLink(.ready))
+        collector.historyWentQuiet()
+        #expect(source.historyRequests == 1)
+        clock.now += 10 * 60
+        collector.historyHeartbeat()
+        #expect(source.historyRequests == 1, "ten minutes on, nothing new is asked")
+        clock.now += LiveCollector.historySyncInterval
+        collector.historyHeartbeat()
+        #expect(source.historyRequests == 2)
+        #expect(LiveCollector.historySyncInterval == 30 * 60)
+    }
+
+    @Test func theHeartbeatAsksNothingWhileTheLinkIsDown() {
+        let source = FakeDataLinkSource()
+        let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())
+        source.send(.dataLink(.unavailable))
+        collector.historyHeartbeat()
+        #expect(source.historyRequests == 0)
+    }
+
     @Test func nothingIsAskedBeforePairing() {
         let source = FakeDataLinkSource()
         let collector = LiveCollector(source: source, sink: FakeSink(), defaults: makeDefaults(), now: { now })
