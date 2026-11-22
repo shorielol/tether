@@ -142,6 +142,27 @@ final class AppModel {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["tether.mark.\(mark)"])
     }
 
+    /// Last night's vitals against your range, and the early warning.
+    var healthMonitor: HealthMonitor? { HealthMonitor.check(latest: lastNight, history: nights) }
+
+    private static let healthNotifiedKey = "tether.health.lastNotifiedDay"
+
+    /// The morning heads-up: only when the early warning is raised, at most once a day.
+    private func notifyHealth(after night: NightSummary?) async {
+        guard let night, let report = HealthMonitor.check(latest: night, history: nights) else { return }
+        let defaults = UserDefaults.standard
+        guard let notice = HealthMonitor.notification(for: report.warning, day: night.day,
+                                                      lastNotifiedDay: defaults.string(forKey: Self.healthNotifiedKey))
+        else { return }
+        let center = UNUserNotificationCenter.current()
+        guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+        let content = UNMutableNotificationContent()
+        content.title = notice.title
+        content.body = notice.body
+        try? await center.add(UNNotificationRequest(identifier: "tether.health.\(night.day)", content: content, trigger: nil))
+        defaults.set(night.day, forKey: Self.healthNotifiedKey)
+    }
+
     var marksToday: [Int] {
         let start = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
         return marks.filter { $0 >= start }
@@ -362,6 +383,7 @@ final class AppModel {
         let night = try? await sink.scoreDay(dayStart: dayStart, now: Int(now.timeIntervalSince1970), profile: profile)
         let baselineNights = (try? await sink.baselineNightCount()) ?? scoredNightCount
         publishMorning(night: night, baselineNights: baselineNights)
+        await notifyHealth(after: night)
     }
 
     private func publishMorning(night: NightSummary?, baselineNights: Int) {

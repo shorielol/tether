@@ -8,14 +8,18 @@ struct HealthView: View {
 
     var body: some View {
         let vitals = HealthVital.compute(latest: model.lastNight, history: model.nights)
+        let monitor = model.healthMonitor
         TabScreen {
             ScreenHeader(eyebrow: "Last night vs your normal", title: "Health")
+            if let monitor { EarlyWarningCard(warning: monitor.warning) }
             if vitals.isEmpty {
                 NotYet(title: "No nights yet", detail: "Wear the strap to bed. Your vitals show here in the morning.")
                     .card()
             } else {
                 Text(HealthVital.summary(vitals)).font(.subheadline).foregroundStyle(TetherBrand.sub)
-                ForEach(vitals) { VitalCard(vital: $0) }
+                ForEach(vitals) { vital in
+                    VitalCard(vital: vital, flag: monitor?.flags.first { $0.name == vital.name })
+                }
             }
             PendingVital(name: "Blood oxygen", status: "not sent yet",
                          detail: "Your strap hasn't sent blood oxygen yet. If it never does, this will say it isn't available on your strap.")
@@ -23,23 +27,87 @@ struct HealthView: View {
     }
 }
 
+/// The early warning: quiet when all's well, a gentle note when several signals drift together.
+private struct EarlyWarningCard: View {
+    let warning: HealthMonitor.Warning
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: icon).foregroundStyle(tint).font(.subheadline.weight(.semibold))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text(detail).font(.subheadline).foregroundStyle(TetherBrand.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+        .accessibilityElement(children: .combine)
+    }
+
+    private var title: String {
+        switch warning {
+        case .learning: "Early warning is learning"
+        case .clear: "Nothing unusual last night"
+        case .mild: "A little off your normal"
+        case .raised: "A few signals are off your normal"
+        case .explained: "Off your normal, with a likely reason"
+        }
+    }
+
+    private var detail: String {
+        switch warning {
+        case .learning(let nights):
+            "It watches for several signals drifting together, the way they can a day or two before you feel ill. It starts once it knows your normal: \(nights) more \(nights == 1 ? "night" : "nights")."
+        case .clear:
+            "Resting heart rate, HRV, breathing and skin temperature are where they usually are for you."
+        case .mild(let signals):
+            "\(signals.joined(separator: ", ")). Probably nothing; worth seeing whether it's still there tomorrow."
+        case .raised(let signals):
+            "\(signals.joined(separator: ", ")). Take it easy and see how you feel. On-device estimate, not a diagnosis."
+        case .explained(let signals):
+            "\(signals.joined(separator: ", ")), but something else you did likely explains it."
+        }
+    }
+
+    private var icon: String {
+        switch warning {
+        case .raised, .mild: "exclamationmark.circle.fill"
+        case .clear: "checkmark.circle.fill"
+        default: "circle.dotted"
+        }
+    }
+
+    private var tint: Color {
+        switch warning {
+        case .raised, .mild: TetherBrand.headsUp
+        case .clear: TetherBrand.good
+        default: TetherBrand.sub
+        }
+    }
+}
+
 private struct VitalCard: View {
     let vital: HealthVital
+    /// The health monitor's verdict: only an out-of-range flag turns the card to a heads-up.
+    let flag: HealthMonitor.Flag?
+
+    private var flagged: Bool { flag?.outOfRange == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(vital.name).font(.headline)
                 Spacer()
-                Text(verdict).font(.footnote.weight(vital.isWorse ? .semibold : .regular))
-                    .foregroundStyle(vital.isWorse ? TetherBrand.headsUp : TetherBrand.sub)
+                Text(verdict).font(.footnote.weight(flagged ? .semibold : .regular))
+                    .foregroundStyle(flagged ? TetherBrand.headsUp : TetherBrand.sub)
             }
             if let value = vital.value {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(format(value)).font(.system(.title, weight: .bold)).monospacedDigit()
                     Text(vital.unit).font(.subheadline).foregroundStyle(TetherBrand.sub)
                 }
-                RangeBar(placement: placement(value), tint: vital.isWorse ? TetherBrand.headsUp : TetherBrand.text)
+                RangeBar(placement: placement(value), tint: flagged ? TetherBrand.headsUp : TetherBrand.text)
             }
             WeekChart(vital: vital).frame(height: 64)
             if let band = vital.band {
@@ -53,7 +121,13 @@ private struct VitalCard: View {
     }
 
     private var verdict: String {
-        guard let value = vital.value else { return "not measured last night" }
+        guard let value = vital.value else {
+            let everMeasured = vital.recent.contains { $0.value != nil }
+            return everMeasured ? "not measured last night" : "starts after a night's sleep"
+        }
+        if flagged {
+            return flag?.personal == true ? "outside your usual range" : "outside the typical adult range"
+        }
         guard let band = vital.band else { return "learning your normal" }
         if band.contains(value) { return "in your normal" }
         return value < band.low ? "below your normal" : "above your normal"
