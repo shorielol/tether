@@ -46,6 +46,29 @@ public final class MarkLabels: @unchecked Sendable {
         all = labels
     }
 
+    private static let deletedKey = "tether.marks.deleted"
+
+    private var deleted: Set<Int> {
+        get { Set((defaults.array(forKey: Self.deletedKey) as? [Int]) ?? []) }
+        set { defaults.set(newValue.sorted(), forKey: Self.deletedKey) }
+    }
+
+    /// Deletes a mark: its name goes, and the tap stays hidden even if the strap's history sends it again.
+    public func delete(_ mark: Int) {
+        var labels = all
+        labels[String(mark)] = nil
+        all = labels
+        var gone = deleted
+        gone.insert(mark)
+        deleted = gone
+    }
+
+    /// The marks that haven't been deleted.
+    public func visible(_ marks: [Int]) -> [Int] {
+        let gone = deleted
+        return marks.filter { !gone.contains($0) }
+    }
+
     /// Names used most recently first, each once.
     public var recent: [String] {
         var seen = Set<String>()

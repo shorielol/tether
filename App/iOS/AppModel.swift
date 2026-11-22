@@ -133,6 +133,15 @@ final class AppModel {
         labelsVersion += 1
     }
 
+    /// Deletes a mark everywhere on this phone; a resent tap from the strap stays hidden.
+    func deleteMark(_ mark: Int) {
+        markLabels.delete(mark)
+        marks.removeAll { $0 == mark }
+        markWindows[mark] = nil
+        labelsVersion += 1
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["tether.mark.\(mark)"])
+    }
+
     var marksToday: [Int] {
         let start = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
         return marks.filter { $0 >= start }
@@ -156,7 +165,8 @@ final class AppModel {
         guard let pairedAt = collector.pairedAt else { marks = []; return }
         await collector.flush()
         let now = Int(Date().timeIntervalSince1970)
-        guard let found = try? await sink.marks(from: max(pairedAt, now - Self.marksLookback), to: now) else { return }
+        guard let stored = try? await sink.marks(from: max(pairedAt, now - Self.marksLookback), to: now) else { return }
+        let found = markLabels.visible(stored)
         if found != marks { marks = found }
         for mark in found where markWindows[mark] == nil && now >= mark + MarkWindow.afterSeconds {
             if let window = try? await sink.window(around: mark) { markWindows[mark] = window }

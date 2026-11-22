@@ -18,7 +18,7 @@ struct MarksView: View {
             } else {
                 list
             }
-            HowItsWorkedOut(text: "A mark is the moment your strap felt the double-tap. Each one compares your average heart rate in the 15 minutes before with the 30 minutes after, once there's at least 5 minutes of heart rate on each side. After \(MarkEffect.marksNeeded) marks with the same name, the usual effect is the average of their changes. Names stay on this phone.")
+            HowItsWorkedOut(text: "A mark is the moment your strap felt the double-tap. Tap a mark to name it or delete it, or press and hold to delete. Each one compares your average heart rate in the 15 minutes before with the 30 minutes after, once there's at least 5 minutes of heart rate on each side. After \(MarkEffect.marksNeeded) marks with the same name, the usual effect is the average of their changes. Names stay on this phone.")
         }
         .navigationTitle("Marks")
         .navigationBarTitleDisplayMode(.large)
@@ -28,6 +28,10 @@ struct MarksView: View {
                 Button(label) { save(label) }
             }
             Button("Save") { save(draft) }
+            Button("Delete mark", role: .destructive) {
+                if let naming { model.deleteMark(naming) }
+                naming = nil
+            }
             Button("Cancel", role: .cancel) { naming = nil }
         }
     }
@@ -64,6 +68,10 @@ struct MarksView: View {
             ForEach(model.marks.reversed().prefix(40), id: \.self) { mark in
                 Button { draft = model.label(for: mark) ?? ""; naming = mark } label: { row(mark) }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Delete mark", systemImage: "trash", role: .destructive) { model.deleteMark(mark) }
+                    }
+                    .accessibilityAction(named: "Delete mark") { model.deleteMark(mark) }
                 if mark != model.marks.reversed().prefix(40).last { Divider().overlay(TetherBrand.cardStroke) }
             }
         }
@@ -88,7 +96,7 @@ struct MarksView: View {
         .padding(.vertical, 9)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Names this mark")
+        .accessibilityHint("Names this mark. Press and hold to delete it.")
     }
 
     private func save(_ label: String) {

@@ -87,6 +87,15 @@ struct MarksTests {
         #expect(MarkLabels(defaults: store.defaults).label(for: 300) == "Coffee", "labels survive a relaunch")
     }
 
+    @Test func aDeletedMarkStaysGoneEvenIfTheStrapSendsItAgain() {
+        let store = MarkLabels(defaults: defaults())
+        store.set("Coffee", for: 100)
+        store.delete(100)
+        #expect(store.label(for: 100) == nil)
+        #expect(store.visible([100, 200]) == [200], "the strap's history can resend a tap; it stays deleted")
+        #expect(MarkLabels(defaults: store.defaults).visible([100]) == [], "and across a relaunch")
+    }
+
     /// Heart rate at 62 for 15 minutes before each mark, 71 for the half hour after.
     private func hrAround(_ marks: [Int], before: Int = 62, after: Int = 71) -> [HRSample] {
         marks.flatMap { mark in
