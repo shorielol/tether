@@ -37,7 +37,7 @@ struct TodayView: View {
             StressDetailView(detail: model.stress ?? .empty)
         case .effort:
             if let today = model.today, let effort = model.effort {
-                EffortDetailView(today: today, detail: effort)
+                EffortDetailView(today: today, detail: effort, steps: model.steps)
             } else {
                 TabScreen { NotYet(title: "No heart rate yet today", detail: "Effort and zones fill in as the strap records.").card() }
             }
@@ -80,6 +80,9 @@ struct TodayView: View {
                     .card()
             }
             DetailLink(.recovery) { RecoveryCard(detail: model.recovery, charge: charge) }
+            if model.collector.isPaired {
+                DetailLink(.effort) { StepsRow(steps: model.steps) }
+            }
             if let today = model.today, !today.isEmpty {
                 DetailLink(.stress) { StressRow(today: today) }
             }

@@ -34,6 +34,32 @@ enum DebugFixture {
         return (hr, rr, midnight...end)
     }
 
+    /// The sample day's steps: a walk to school, a slow afternoon, the 6 PM run. The counter resets once at
+    /// noon, as the real strap's does, so the screen shows the same handling.
+    static func steps() -> DailySteps {
+        let midnight = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
+        var counter = 0
+        var samples: [StepSample] = []
+        for minute in 0..<(21 * 60) {
+            let perMinute = stepsPerMinute(Double(minute) / 60)
+            if minute == 12 * 60 { counter = 0 }
+            counter += perMinute
+            samples.append(StepSample(ts: midnight + minute * 60, counter: counter,
+                                      activityClass: perMinute >= 60 ? 1 : 0))
+        }
+        return DailySteps.compute(samples: samples, dayStart: midnight, dayEnd: midnight + 86_400)
+    }
+
+    private static func stepsPerMinute(_ hour: Double) -> Int {
+        switch hour {
+        case 7..<8: 55
+        case 15..<16: 20
+        case 18..<18.6: 150
+        case 8..<21: 3
+        default: 0
+        }
+    }
+
     /// Beat-to-beat spread: wide when relaxed, narrow when tense.
     private static func spread(_ hour: Double) -> Int {
         switch hour {

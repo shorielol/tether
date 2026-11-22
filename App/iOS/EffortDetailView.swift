@@ -7,12 +7,14 @@ import TetherCore
 struct EffortDetailView: View {
     let today: TodaySnapshot
     let detail: EffortDetail
+    var steps: DailySteps?
 
     @State private var selected: Date?
 
     var body: some View {
         TabScreen {
             hero
+            if let steps, steps.hasData { stepsCard(steps) }
             heartRate
             zones
             stretches
@@ -44,6 +46,45 @@ struct EffortDetailView: View {
         case .defaultValue: "a default until you've rested"
         }
         return "Effort adds up the time your heart rate spends above resting, weighting harder zones more, on a 0–100 scale. Zones are shares of your max heart rate (\(today.maxHR), from your age); resting is \(today.restingHR) bpm, from \(resting). Heart-rate recovery is how far your heart rate falls in the minutes after hard work: a bigger drop is a fitter heart. Calories are an estimate from heart rate, age and weight."
+    }
+
+    // MARK: Steps
+
+    private func stepsCard(_ steps: DailySteps) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Steps").font(.headline)
+                Spacer()
+                Text("\(steps.total.formatted()) · \(steps.movingMinutes) min moving")
+                    .font(.caption).foregroundStyle(TetherBrand.sub).monospacedDigit()
+            }
+            Chart(steps.hours) { hour in
+                BarMark(x: .value("Hour", hour.hour), y: .value("Steps", hour.steps), width: .fixed(7))
+                    .foregroundStyle(TetherBrand.bone)
+                    .clipShape(.rect(cornerRadii: .init(topLeading: 3, topTrailing: 3)))
+            }
+            .chartXScale(domain: -0.5...23.5)
+            .chartXAxis {
+                AxisMarks(values: [0, 6, 12, 18]) { value in
+                    AxisValueLabel {
+                        if let hour = value.as(Int.self) { Text(hourLabel(hour)) }
+                    }
+                }
+            }
+            .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) }
+            .frame(height: 120)
+            .accessibilityLabel("Steps by hour today, \(steps.total) in all")
+            Text("From your strap's own step counter. New steps arrive each time Tether syncs the strap's history, about every 30 minutes.")
+                .font(.caption).foregroundStyle(TetherBrand.sub)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .card()
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        var parts = DateComponents()
+        parts.hour = hour
+        return (Calendar.current.date(from: parts) ?? .now).formatted(.dateTime.hour())
     }
 
     // MARK: Heart rate

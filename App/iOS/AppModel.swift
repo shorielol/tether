@@ -35,6 +35,8 @@ final class AppModel {
     /// Today's stress and effort in depth, computed alongside `today` from the same samples.
     private(set) var stress: StressDetail?
     private(set) var effort: EffortDetail?
+    /// Today's steps from the strap's own counter; it fills in with each history sync.
+    private(set) var steps: DailySteps?
     @ObservationIgnored private var todayLoop: Task<Void, Never>?
     /// Scored nights, oldest first (last 30 days).
     private(set) var nights: [NightSummary] = []
@@ -131,6 +133,7 @@ final class AppModel {
             nights = DebugFixture.nights()
             latestNight = nights.last
             scoredNightCount = nights.count
+            steps = DebugFixture.steps()
             Task {
                 let day = await Task.detached { DebugFixture.dayStreams() }.value
                 apply(await Self.analyse(hr: day.hr, rr: day.rr, profile: profile, window: day.window,
@@ -194,6 +197,8 @@ final class AppModel {
         guard let batch = try? await sink.readBack(from: start, to: now, limit: Self.dayReadLimit) else { return }
         apply(await Self.analyse(hr: batch.streams.hr, rr: batch.streams.rr, profile: profile, window: start...now,
                                  now: now))
+        let midnight = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
+        if let counted = try? await sink.dailySteps(dayStart: midnight, now: now) { steps = counted }
     }
 
     /// Scores every night since pairing that hasn't been scored, plus yesterday and today again (their

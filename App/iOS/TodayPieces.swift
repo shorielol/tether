@@ -350,6 +350,53 @@ struct RecoveryCard: View {
     }
 }
 
+// MARK: - Steps row
+
+/// Today's steps from the strap's own counter. They arrive with each history sync, so the row says how
+/// recent the count is.
+struct StepsRow: View {
+    let steps: DailySteps?
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Steps").font(.headline)
+                    reading
+                }
+                Spacer(minLength: 0)
+            } else {
+                Text("Steps").font(.headline)
+                Spacer()
+                reading
+            }
+            DetailChevron()
+        }
+        .card(padding: 14)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var reading: some View {
+        if let steps, steps.hasData {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(steps.total.formatted()).font(.subheadline.weight(.semibold)).monospacedDigit()
+                Text(asOf(steps)).font(.caption).foregroundStyle(TetherBrand.sub)
+            }
+        } else {
+            Text("after the strap's next sync").font(.subheadline).foregroundStyle(TetherBrand.sub)
+        }
+    }
+
+    private func asOf(_ steps: DailySteps) -> String {
+        guard let ts = steps.lastSampleTs else { return "" }
+        let time = Date(timeIntervalSince1970: TimeInterval(ts)).formatted(date: .omitted, time: .shortened)
+        return steps.movingMinutes > 0 ? "\(steps.movingMinutes) min moving · as of \(time)" : "as of \(time)"
+    }
+}
+
 // MARK: - Stress row
 
 /// One line for stress: where it is now and since when. The hour-by-hour view opens from here.

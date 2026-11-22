@@ -349,7 +349,7 @@ public struct GravitySample: Equatable, Codable {
 /// 0=still, 1=walk, 2=run; nil when the byte was 0xFF/invalid or absent. A lightweight, no-cloud
 /// activity readout that rides alongside the counter. Optional + defaulted so existing call sites and
 /// the persisted store (which carries only ts/counter today) are unchanged.
-public struct StepSample: Equatable, Codable {
+public struct StepSample: Equatable, Codable, Sendable {  // tether: Sendable, plain values only
     public let ts: Int
     public let counter: Int
     public let activityClass: Int?
