@@ -16,6 +16,7 @@ struct EffortDetailView: View {
             hero
             if let steps, steps.hasData { stepsCard(steps) }
             heartRate
+            WorkoutsCard()
             zones
             stretches
             if detail.effortCurve.count >= 2 { effortBuild }

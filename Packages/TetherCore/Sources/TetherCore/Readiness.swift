@@ -169,3 +169,15 @@ public enum InstallExpiry {
         return Status(expires: expires, now: now)
     }
 }
+
+/// A target for the day's Effort, set by how charged you are: push on a green day, hold back on a red.
+/// A starting point on the 0–100 Effort scale, not a rule.
+public enum EffortTarget {
+    public static func band(for zone: ChargeZone) -> NormalBand {
+        switch zone {
+        case .green: NormalBand(low: 55, high: 75)
+        case .yellow: NormalBand(low: 35, high: 55)
+        case .red: NormalBand(low: 15, high: 35)
+        }
+    }
+}

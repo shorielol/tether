@@ -104,12 +104,15 @@ struct ScoreStrip: View {
         }
     }
 
+    private var effortTarget: NormalBand? { charge.map { EffortTarget.band(for: ChargeZone(charge: $0)) } }
+
     private var effortColumn: some View {
-        ScoreColumn(label: "Effort", caption: "of 100 so far",
+        ScoreColumn(label: "Effort",
+                    caption: effortTarget.map { "target \(Int($0.low))–\(Int($0.high))" } ?? "of 100 so far",
                     accessibility: "Effort \(effort.map { String(format: "%.1f", $0) } ?? "not started") of 100") {
             Text(effort.map { String(format: "%.1f", $0) } ?? "–")
         } bar: {
-            RangeBar(placement: RangePlacement(value: effort ?? 0, band: nil, domain: 0...100), tint: TetherBrand.ember,
+            RangeBar(placement: RangePlacement(value: effort ?? 0, band: effortTarget, domain: 0...100), tint: TetherBrand.ember,
                      showsValue: effort != nil)
         }
     }
