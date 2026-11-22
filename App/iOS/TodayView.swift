@@ -3,7 +3,7 @@ import TetherCore
 
 /// The screens a Today card opens.
 enum TodayDetail: String, Hashable {
-    case stress, effort, recovery, sleep
+    case stress, effort, recovery, sleep, marks
 }
 
 struct TodayView: View {
@@ -45,6 +45,8 @@ struct TodayView: View {
             RecoveryDetailView(detail: model.recovery, progress: model.baseline)
         case .sleep:
             SleepView()
+        case .marks:
+            MarksView()
         }
     }
 
@@ -71,7 +73,7 @@ struct TodayView: View {
             if let today = model.today, !today.isEmpty {
                 DetailLink(.effort) {
                     TodayRibbon(today: today, sleep: Self.sleepSpan(night), now: Int(Date.now.timeIntervalSince1970),
-                                live: model.liveHeartRate, beat: model.collector.lastSampleAt)
+                                live: model.liveHeartRate, beat: model.collector.lastSampleAt, marks: model.marksToday)
                 }
             } else {
                 NotYet(title: model.collector.isPaired ? "Collecting your first minutes" : "Not recording yet",
@@ -86,6 +88,9 @@ struct TodayView: View {
             }
             if let today = model.today, !today.isEmpty {
                 DetailLink(.stress) { StressRow(today: today) }
+            }
+            if model.collector.isPaired {
+                DetailLink(.marks) { MarksRow() }
             }
         }
     }

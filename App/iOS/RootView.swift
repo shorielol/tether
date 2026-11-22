@@ -33,6 +33,7 @@ struct MainTabs: View {
         case "trends": Destination(section: .trends)
         case "sleep": Destination(section: .today, path: [.sleep])
         case "strap": Destination(section: .today, strap: true)
+        case "marks": Destination(section: .today, path: [.marks])
         default: nil
         }
     }

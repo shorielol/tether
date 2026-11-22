@@ -162,6 +162,8 @@ struct TodayRibbon: View {
     var live: Int?
     /// Changes with every sample, so the heart beats as they arrive.
     var beat: Int?
+    /// Moments marked by double-tapping the strap, drawn as pins.
+    var marks: [Int] = []
 
     private var dayStart: Int {
         Int(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(today.window.lowerBound))).timeIntervalSince1970)
@@ -219,6 +221,12 @@ struct TodayRibbon: View {
                 RectangleMark(xStart: .value("Zone from", date(run.start)), xEnd: .value("Zone to", date(run.end)),
                               yStart: .value("Strip bottom", domain.lowerBound), yEnd: .value("Strip top", stripTop))
                     .foregroundStyle(TetherBrand.zone(run.zone))
+            }
+            ForEach(marks, id: \.self) { mark in
+                RuleMark(x: .value("Marked", date(mark)))
+                    .foregroundStyle(TetherBrand.ember.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                    .accessibilityLabel("Marked at \(date(mark).formatted(date: .omitted, time: .shortened))")
             }
             RuleMark(x: .value("Now", date(now)))
                 .foregroundStyle(Color.white.opacity(0.3))

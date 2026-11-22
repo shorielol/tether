@@ -151,7 +151,7 @@ public extension Array where Element == RRInterval {
     }
 }
 
-public struct WhoopEvent: Equatable, Codable {
+public struct WhoopEvent: Equatable, Codable, Sendable {  // tether: Sendable, plain values only
     public let ts: Int          // real unix seconds (event RTC; never offset)
     public let kind: String
     public let payload: [String: ParsedValue]

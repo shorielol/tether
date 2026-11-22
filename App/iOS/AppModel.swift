@@ -69,6 +69,13 @@ final class AppModel {
         collector.onHistorySynced = { [weak self] outcome in
             Task { await self?.historyArrived(outcome) }
         }
+        collector.onMark = { [weak self] mark, fresh in
+            guard let self else { return }
+            Task { await self.refreshMarks() }
+            if fresh { Task { await self.markNotifier.ask(about: mark, offering: self.markLabels.recent) } }
+        }
+        markNotifier.onAnswer = { [weak self] mark, label in self?.setLabel(label, for: mark) }
+        UNUserNotificationCenter.current().delegate = markNotifier
         folderName = defaults.data(forKey: Self.folderKey).flatMap(SharedFolder.resolve)?.folder.url.lastPathComponent
         UIDevice.current.isBatteryMonitoringEnabled = true
         refreshDeviceState()
@@ -104,6 +111,58 @@ final class AppModel {
         onboarded = true
     }
 
+    // MARK: - Marks
+
+    let markLabels = MarkLabels()
+    @ObservationIgnored let markNotifier = MarkNotifier()
+    /// Taps on the strap in the last `marksLookback`, oldest first.
+    var marks: [Int] = []
+    /// Heart rate either side of each mark whose half hour after has passed.
+    var markWindows: [Int: MarkWindow] = [:]
+    /// Bumped when a name changes, so views re-read `markLabels`.
+    private var labelsVersion = 0
+    static let marksLookback = 60 * 86_400
+
+    func label(for mark: Int) -> String? {
+        _ = labelsVersion
+        return markLabels.label(for: mark)
+    }
+
+    func setLabel(_ label: String, for mark: Int) {
+        markLabels.set(label, for: mark)
+        labelsVersion += 1
+    }
+
+    var marksToday: [Int] {
+        let start = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
+        return marks.filter { $0 >= start }
+    }
+
+    /// What each name usually does, for names with enough marks behind them.
+    var markEffects: [MarkEffect] {
+        _ = labelsVersion
+        let named = marks.compactMap { mark in markLabels.label(for: mark).map { (label: $0, mark: mark) } }
+        return Dictionary(grouping: named) { $0.label.lowercased() }.values
+            .compactMap { group in
+                MarkEffect.compute(label: group[0].label, windows: group.compactMap { markWindows[$0.mark] })
+            }
+            .sorted { $0.marks > $1.marks }
+    }
+
+    func refreshMarks() async {
+        #if DEBUG
+        if DebugFixture.isOn { return }
+        #endif
+        guard let pairedAt = collector.pairedAt else { marks = []; return }
+        await collector.flush()
+        let now = Int(Date().timeIntervalSince1970)
+        guard let found = try? await sink.marks(from: max(pairedAt, now - Self.marksLookback), to: now) else { return }
+        if found != marks { marks = found }
+        for mark in found where markWindows[mark] == nil && now >= mark + MarkWindow.afterSeconds {
+            if let window = try? await sink.window(around: mark) { markWindows[mark] = window }
+        }
+    }
+
     /// One local notification a day before the signing runs out. Rescheduled on every launch and
     /// foreground, so a renewal (new expiry date) moves it automatically.
     func scheduleExpiryReminder() async {
@@ -134,6 +193,10 @@ final class AppModel {
             latestNight = nights.last
             scoredNightCount = nights.count
             steps = DebugFixture.steps()
+            let fixtureMarks = DebugFixture.marks()
+            marks = fixtureMarks.map(\.ts)
+            markWindows = Dictionary(uniqueKeysWithValues: fixtureMarks.compactMap { mark in mark.window.map { (mark.ts, $0) } })
+            for mark in fixtureMarks { if let label = mark.label { markLabels.set(label, for: mark.ts) } }
             Task {
                 let day = await Task.detached { DebugFixture.dayStreams() }.value
                 apply(await Self.analyse(hr: day.hr, rr: day.rr, gravity: [], profile: profile, window: day.window,
@@ -149,6 +212,7 @@ final class AppModel {
                 await self?.refreshRecordingCard(canStart: true)
                 await self?.refreshToday()
                 await self?.scoreNights()
+                await self?.refreshMarks()
                 await self?.syncFolder()
                 try? await Task.sleep(for: .seconds(30))
             }

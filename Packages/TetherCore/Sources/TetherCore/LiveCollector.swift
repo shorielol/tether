@@ -106,6 +106,10 @@ public final class LiveCollector {
     public private(set) var lastHistoryOutcome: StrapHistoryOutcome?
     /// Called when a history sync ends, so the app can rescore the days it filled in.
     @ObservationIgnored public var onHistorySynced: ((StrapHistoryOutcome) -> Void)?
+    /// A double-tap on the strap: when it was tapped, and whether it's fresh enough to ask about now.
+    @ObservationIgnored public var onMark: ((Int, Bool) -> Void)?
+    /// A tap older than this arrived late (from history), so it's saved without asking about it.
+    public static let freshTapSeconds = 2 * 60
     /// The strap's silent alarm, set over the data link.
     @ObservationIgnored public let alarm: AlarmKeeper
 
@@ -349,6 +353,15 @@ public final class LiveCollector {
         }
     }
 
+    /// Saves a tap with the next write and tells the app. Taps from before pairing aren't the owner's.
+    private func markTapped(at ts: Int) {
+        guard let pairedAt, ts >= pairedAt else { return }
+        var streams = Streams(hr: [], rr: [])
+        streams.events = [WhoopEvent(ts: ts, kind: StrapTap.kind, payload: [:])]
+        pending.append(streams)
+        onMark?(ts, now() - ts <= Self.freshTapSeconds)
+    }
+
     public func startAutoFlush(every seconds: Int = 30) {
         autoFlush?.cancel()
         autoFlush = Task { [weak self] in
@@ -387,6 +400,10 @@ public final class LiveCollector {
             }
         case .strapFrame(let frame):
             if alarm.receive(frame) { return }
+            if let tapped = StrapTap.timestamp(of: frame) {
+                markTapped(at: tapped)
+                return
+            }
             guard let history else { return }
             history.receive(frame)
             armHistoryIdle()

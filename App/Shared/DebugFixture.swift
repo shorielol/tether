@@ -103,6 +103,25 @@ enum DebugFixture {
         }
     }
 
+    struct FixtureMark {
+        let ts: Int
+        let label: String?
+        let window: MarkWindow?
+    }
+
+    /// Four mornings of coffee before today, coffee this morning, and an unnamed mark this afternoon.
+    static func marks() -> [FixtureMark] {
+        let today = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
+        let earlier = (1...4).reversed().map { day in
+            FixtureMark(ts: today - day * 86_400 + 8 * 3_600 + 600, label: "Coffee",
+                        window: MarkWindow(before: 62 + day % 2, after: 71 + day % 3))
+        }
+        return earlier + [
+            FixtureMark(ts: today + 8 * 3_600 + 900, label: "Coffee", window: MarkWindow(before: 63, after: 72)),
+            FixtureMark(ts: today + 15 * 3_600 + 1_200, label: nil, window: MarkWindow(before: 80, after: 92)),
+        ]
+    }
+
     /// Last night's Charge inputs, matching the sample night above.
     private static let fixtureChargeInputs = ChargeInputs(
         hrv: 64, restingHR: 51, resp: 14.6, rest: 78, skinTempDevC: 0.5,
