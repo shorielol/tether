@@ -3,12 +3,14 @@ import TetherCore
 
 /// The screens a Today card opens.
 enum TodayDetail: String, Hashable {
-    case stress, effort, recovery
+    case stress, effort, recovery, sleep
 }
 
 struct TodayView: View {
     @Environment(AppModel.self) private var model
-    @State private var path = TodayView.initialPath
+    /// Owned by the tab bar, so links from widgets can open a detail screen or the strap sheet.
+    @Binding var path: [TodayDetail]
+    @Binding var showingStrap: Bool
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -19,6 +21,13 @@ struct TodayView: View {
                         .background(TetherBrand.ink)
                         .toolbarBackground(TetherBrand.ink, for: .navigationBar)
                 }
+        }
+        .sheet(isPresented: $showingStrap) {
+            StrapView()
+                .safeAreaPadding(.top, 16)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(TetherBrand.ink)
         }
     }
 
@@ -34,60 +43,60 @@ struct TodayView: View {
             }
         case .recovery:
             RecoveryDetailView(detail: model.recovery, progress: model.baseline)
+        case .sleep:
+            SleepView()
         }
     }
 
+    /// Glance first: the three scores, one sentence, the day, what's behind Charge, then stress.
     private var content: some View {
-        TabScreen {
+        let night = model.lastNight
+        let chargeNight = model.latestNight ?? night
+        let charge = chargeNight?.charge
+        let sleepBand = Self.band(model.nights, before: night) { $0.totalSleepMin }
+        return TabScreen {
             ScreenHeader(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)), title: "Today") {
-                if model.collector.isPaired { LivePill() }
+                StrapChip { showingStrap = true }
             }
-            if let today = model.today, !today.isEmpty {
-                LiveHeroCard(today: today, liveBPM: model.liveHeartRate)
-                HStack(alignment: .top, spacing: 14) {
-                    DetailLink(.effort) { EffortCard(today: today) }
-                    CaloriesCard(today: today)
-                }
+            ScoreStrip(charge: charge, chargeBand: Self.band(model.nights, before: chargeNight) { $0.charge },
+                       progress: model.baseline, night: night, sleepBand: sleepBand, effort: model.today?.effort)
+                .padding(.top, 6)
+            Text(DayLine.sentence(zone: charge.map(ChargeZone.init(charge:)),
+                                  nightsUntilCharge: model.baseline.nightsUntilCharge,
+                                  sleptMinutes: night?.totalSleepMin, sleepBand: sleepBand, effort: model.today?.effort))
+                .font(.title3.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
-                DetailLink(.effort) { HeartRateDayCard(today: today) }
-                DetailLink(.effort) { ZonesCard(today: today) }
-                DetailLink(.stress) { StressCard(today: today) }
-                CoverageRow(today: today)
-            } else if model.collector.isPaired {
-                NotYet(title: "Collecting your first minutes",
-                       detail: "Live numbers, Effort and your heart-rate chart appear here within a minute of recording.")
-                    .card()
-            } else {
-                NotYet(title: "Not recording yet", detail: "Pair your strap from the Strap tab to start your history.")
-                    .card()
-            }
-            if let night = model.lastNight {
-                LastNightRow(night: night)
-            }
-            if let charge = (model.latestNight ?? model.lastNight)?.charge {
-                DetailLink(.recovery) {
-                    ChargeCard(charge: charge, drivers: (model.latestNight ?? model.lastNight)?.drivers ?? [])
+                .padding(.vertical, 6)
+            if let today = model.today, !today.isEmpty {
+                DetailLink(.effort) {
+                    TodayRibbon(today: today, sleep: Self.sleepSpan(night), now: Int(Date.now.timeIntervalSince1970))
                 }
             } else {
-                DetailLink(.recovery) { BaselineRow(progress: model.baseline) }
+                NotYet(title: model.collector.isPaired ? "Collecting your first minutes" : "Not recording yet",
+                       detail: model.collector.isPaired
+                           ? "Your day's heart rate appears here within a minute of recording."
+                           : "Tap the strap button at the top to pair your strap and start your history.")
+                    .card()
             }
-            if let saved = model.lastSavedAt, let folder = model.folderName {
-                Text("Saved to iCloud Drive / \(folder) at \(saved.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption).foregroundStyle(TetherBrand.sub)
-                    .frame(maxWidth: .infinity)
+            DetailLink(.recovery) { RecoveryCard(detail: model.recovery, charge: charge) }
+            if let today = model.today, !today.isEmpty {
+                DetailLink(.stress) { StressRow(today: today) }
             }
         }
     }
 
-    private static var initialPath: [TodayDetail] {
-        #if DEBUG
-        // Screenshot runs pass `-tether.debugDetail stress` to open a detail screen directly.
-        if let name = UserDefaults.standard.string(forKey: "tether.debugDetail"), let detail = TodayDetail(rawValue: name) {
-            return [detail]
-        }
-        #endif
-        return []
+    /// Your normal for a night measure, from the nights before the one shown.
+    private static func band(_ nights: [NightSummary], before night: NightSummary?,
+                             _ read: (NightSummary) -> Double?) -> NormalBand? {
+        guard let night else { return nil }
+        return NormalBand(past: nights.filter { $0.day < night.day }.compactMap(read))
     }
+
+    private static func sleepSpan(_ night: NightSummary?) -> ClosedRange<Int>? {
+        guard let start = night?.sleepStart, let end = night?.sleepEnd, start < end else { return nil }
+        return start...end
+    }
+
 }
 
 /// A Today card that opens a detail screen: the whole card is the tap target, and it shows a chevron.
@@ -106,27 +115,5 @@ struct DetailLink<Label: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint("Opens more detail")
-    }
-}
-
-private struct LivePill: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        let collector = model.collector
-        HStack(spacing: 6) {
-            Image(systemName: "heart.fill").foregroundStyle(TetherBrand.ember)
-                .symbolEffect(.bounce, value: collector.lastSampleAt)
-            Text(collector.link == .connected ? live(collector) : "Not connected")
-                .font(.subheadline.weight(.semibold)).monospacedDigit()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.white.opacity(0.06), in: .capsule)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func live(_ collector: LiveCollector) -> String {
-        collector.batteryPercent.map { "Live · \($0)%" } ?? "Live"
     }
 }

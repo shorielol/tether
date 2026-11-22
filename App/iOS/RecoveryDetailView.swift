@@ -30,32 +30,15 @@ struct RecoveryDetailView: View {
 
     @ViewBuilder private func hero(_ detail: RecoveryDetail) -> some View {
         if let charge = detail.night.charge, let zone = detail.zone {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel(text: "Charge")
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("\(Int(charge.rounded()))").font(.system(size: 56, weight: .bold)).monospacedDigit()
-                        .foregroundStyle(TetherBrand.charge(zone))
-                    HStack(spacing: 6) {
-                        Circle().fill(TetherBrand.charge(zone)).frame(width: 8, height: 8)
-                        Text(zone.name).font(.headline).foregroundStyle(TetherBrand.charge(zone))
-                    }
-                }
-                Text(zone.advice).font(.title3.weight(.semibold))
-                Text("Green 67–100 · Yellow 34–66 · Red 0–33").font(.caption).foregroundStyle(TetherBrand.sub)
+            DetailHero(label: "Charge", meaning: "\(zone.name) · \(zone.advice)") {
+                Text("\(Text("\(Int(charge.rounded()))"))\(Text("%").font(.title.weight(.semibold)))")
+                    .foregroundStyle(TetherBrand.charge(zone))
             }
-            .card()
-            .accessibilityElement(children: .combine)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                SectionLabel(text: "Charge")
-                Text("Learning your normal").font(.title2.weight(.bold))
-                ProgressView(value: Double(progress.scoredNights), total: Double(BaselineProgress.chargeNights))
-                    .tint(TetherBrand.ember)
-                Text("\(progress.scoredNights) of \(BaselineProgress.chargeNights) nights. Charge compares each night with your own normal, so it starts once it has one. \(detail.nightsUntilCharge) more to go.")
-                    .font(.subheadline).foregroundStyle(TetherBrand.sub)
-                    .fixedSize(horizontal: false, vertical: true)
+            DetailHero(label: "Charge",
+                       meaning: "\(progress.scoredNights) of \(BaselineProgress.chargeNights) nights. Charge compares each night with your own normal, so it starts once it has one. \(detail.nightsUntilCharge) more to go.") {
+                Text("Learning").foregroundStyle(TetherBrand.sub)
             }
-            .card()
         }
     }
 
@@ -104,8 +87,15 @@ struct RecoveryDetailView: View {
                         .font(.subheadline.weight(.semibold)).monospacedDigit()
                         .frame(minWidth: 78, alignment: .trailing)
                 }
-                .padding(.vertical, 8)
+                .padding(.top, 8)
+                .padding(.bottom, measure.band == nil ? 8 : 6)
                 .accessibilityElement(children: .combine)
+                if let band = measure.band {
+                    RangeBar(placement: RangePlacement(value: measure.value, band: band,
+                                                       domain: RangePlacement.domain(around: band, value: measure.value)),
+                             tint: !band.contains(measure.value) && measure.isBetter == false ? TetherBrand.headsUp : TetherBrand.text)
+                        .padding(.bottom, 10)
+                }
                 if measure.id != detail.measures.last?.id { Divider().overlay(TetherBrand.cardStroke) }
             }
             if detail.measures.contains(where: { $0.normal == nil }) {
@@ -165,6 +155,7 @@ struct RecoveryDetailView: View {
                     .foregroundStyle(color).symbolSize(24)
             }
             .chartYScale(domain: domain(points.map(\.1), minSpan: minSpan))
+            .chartYAxis { AxisMarks(values: .automatic(desiredCount: 3)) }
             .frame(height: 80)
             .accessibilityLabel("\(title) over the last \(points.count) nights")
         }
@@ -177,10 +168,7 @@ struct RecoveryDetailView: View {
     }
 
     private var notMeasured: some View {
-        Text("Skin temperature and blood oxygen aren't sent over the heart-rate link Tether uses, so they aren't here.")
-            .font(.caption).foregroundStyle(TetherBrand.sub)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 4)
+        HowItsWorkedOut(text: "Charge compares last night with your own normal: HRV counts most, then resting heart rate, sleep and breathing. Your normal is built from your earlier nights, and the grey band on each bar is the middle half of them. Charge starts after \(BaselineProgress.chargeNights) nights. Zones: Green 67–100, Yellow 34–66, Red 0–33. Skin temperature joins once Tether reads it into a nightly value; your strap already records it.")
     }
 
     private func format(_ value: Double, _ decimals: Int) -> String {

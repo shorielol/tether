@@ -223,6 +223,8 @@ public struct RecoveryDetail: Sendable, Equatable {
         public let value: Double
         /// Median of earlier nights, once there are enough of them.
         public let normal: Double?
+        /// The middle half of earlier nights, for range bars. Same night count as `normal`.
+        public let band: NormalBand?
         public let decimals: Int
         /// Whether a higher value is the better direction, or nil when neither is.
         let higherIsBetter: Bool?
@@ -263,6 +265,7 @@ public struct RecoveryDetail: Sendable, Equatable {
             let past = earlier.compactMap(read)
             return Measure(name: name, unit: unit, value: value,
                            normal: past.count >= minNightsForNormal ? median(past) : nil,
+                           band: NormalBand(past: past, minNights: minNightsForNormal),
                            decimals: decimals, higherIsBetter: higherIsBetter)
         }
         let measures = [

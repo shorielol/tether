@@ -17,27 +17,58 @@ struct RootView: View {
 }
 
 struct MainTabs: View {
-    enum Section: String { case today, sleep, trends, strap }
+    enum Section: String { case today, health, trends }
 
-    #if DEBUG
-    // Screenshot runs pass `-tether.debugTab strap` to open on a given tab.
-    @State private var selection = Section(rawValue: UserDefaults.standard.string(forKey: "tether.debugTab") ?? "") ?? .today
-    #else
-    @State private var selection = Section.today
-    #endif
+    /// Where a `tether://` link or a screenshot launch lands. Sleep and the strap live behind Today.
+    struct Destination {
+        var section: Section
+        var path: [TodayDetail] = []
+        var strap = false
+    }
+
+    static func destination(_ name: String) -> Destination? {
+        switch name {
+        case "today": Destination(section: .today)
+        case "health": Destination(section: .health)
+        case "trends": Destination(section: .trends)
+        case "sleep": Destination(section: .today, path: [.sleep])
+        case "strap": Destination(section: .today, strap: true)
+        default: nil
+        }
+    }
+
+    @State private var selection: Section
+    @State private var todayPath: [TodayDetail]
+    @State private var showingStrap: Bool
+
+    init() {
+        var start = Destination(section: .today)
+        #if DEBUG
+        // Screenshot runs pass `-tether.debugTab health`, `-tether.debugDetail stress` or `-tether.debugSheet strap`.
+        let defaults = UserDefaults.standard
+        if let name = defaults.string(forKey: "tether.debugTab"), let destination = Self.destination(name) { start = destination }
+        if let name = defaults.string(forKey: "tether.debugDetail"), let detail = TodayDetail(rawValue: name) { start.path = [detail] }
+        if defaults.string(forKey: "tether.debugSheet") == "strap" { start.strap = true }
+        #endif
+        _selection = State(initialValue: start.section)
+        _todayPath = State(initialValue: start.path)
+        _showingStrap = State(initialValue: start.strap)
+    }
 
     var body: some View {
         TabView(selection: $selection) {
-            Tab("Today", systemImage: "sun.max", value: .today) { TodayView() }
-            Tab("Sleep", systemImage: "moon", value: .sleep) { SleepView() }
-            Tab("Trends", systemImage: "chart.bar", value: .trends) { TrendsView() }
-            Tab("Strap", systemImage: "heart", value: Section.strap) { StrapView() }
-        }
-        // Lock-screen widgets open `tether://sleep` or `tether://today`.
-        .onOpenURL { url in
-            if url.scheme == "tether", let section = url.host().flatMap(Section.init(rawValue:)) {
-                selection = section
+            Tab("Today", systemImage: "sun.max", value: .today) {
+                TodayView(path: $todayPath, showingStrap: $showingStrap)
             }
+            Tab("Health", systemImage: "waveform.path.ecg", value: .health) { HealthView() }
+            Tab("Trends", systemImage: "chart.bar", value: Section.trends) { TrendsView() }
+        }
+        // Lock-screen widgets open `tether://today` or `tether://sleep`; the recording card opens `tether://strap`.
+        .onOpenURL { url in
+            guard url.scheme == "tether", let destination = url.host().flatMap(Self.destination) else { return }
+            selection = destination.section
+            todayPath = destination.path
+            showingStrap = destination.strap
         }
     }
 }

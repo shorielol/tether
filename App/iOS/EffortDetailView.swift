@@ -17,32 +17,33 @@ struct EffortDetailView: View {
             zones
             stretches
             if detail.effortCurve.count >= 2 { effortBuild }
-            if !detail.hourly.isEmpty { hourly }
+            HowItsWorkedOut(text: method)
         }
-        .navigationTitle("Effort & heart rate")
+        .navigationTitle("Effort")
         .navigationBarTitleDisplayMode(.large)
     }
 
     // MARK: Hero
 
     private var hero: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 24) {
-            VStack(alignment: .leading, spacing: 4) {
-                SectionLabel(text: "Effort")
-                Text(today.effort.map { String(format: "%.1f", $0) } ?? "…")
-                    .font(.system(size: 44, weight: .bold)).monospacedDigit()
-                Text("out of 100").font(.caption).foregroundStyle(TetherBrand.sub)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                SectionLabel(text: "Calories")
-                Text(today.caloriesTotal.map { $0.formatted() } ?? "–").font(.title2.weight(.semibold)).monospacedDigit()
-                Text(today.caloriesActive.map { "\($0.formatted()) active" } ?? "estimated")
-                    .font(.caption).foregroundStyle(TetherBrand.sub)
-            }
+        DetailHero(label: "Effort so far", meaning: heroMeaning) {
+            Text(today.effort.map { String(format: "%.1f", $0) } ?? "–")
         }
-        .card()
-        .accessibilityElement(children: .combine)
+    }
+
+    /// Out of 100, plus calories when the profile has a weight to estimate them from.
+    private var heroMeaning: String {
+        guard let total = today.caloriesTotal else { return "out of 100 · add your weight in the profile for calories" }
+        return "out of 100 · \(total.formatted()) kcal, \((today.caloriesActive ?? 0).formatted()) active"
+    }
+
+    private var method: String {
+        let resting = switch today.restingSource {
+        case .profile: "your profile"
+        case .lowestFiveMinutes: "your lowest 5 minutes today"
+        case .defaultValue: "a default until you've rested"
+        }
+        return "Effort adds up the time your heart rate spends above resting, weighting harder zones more, on a 0–100 scale. Zones are shares of your max heart rate (\(today.maxHR), from your age); resting is \(today.restingHR) bpm, from \(resting). Heart-rate recovery is how far your heart rate falls in the minutes after hard work: a bigger drop is a fitter heart. Calories are an estimate from heart rate, age and weight."
     }
 
     // MARK: Heart rate
@@ -180,9 +181,6 @@ struct EffortDetailView: View {
                 .padding(.vertical, 4)
                 .accessibilityElement(children: .combine)
             }
-            Text("Heart-rate recovery is how far your heart rate falls after hard work. A bigger drop is a fitter heart.")
-                .font(.caption).foregroundStyle(TetherBrand.sub)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .card()
     }
@@ -216,33 +214,6 @@ struct EffortDetailView: View {
             .accessibilityLabel("Effort through the day, reaching \(today.effort.map { String(format: "%.1f", $0) } ?? "0")")
         }
         .card()
-    }
-
-    // MARK: Hourly average
-
-    private var hourly: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Average heart rate by hour").font(.headline)
-            Chart(detail.hourly) { hour in
-                BarMark(x: .value("Hour", date(hour.startTs), unit: .hour), y: .value("BPM", hour.averageBPM))
-                    .foregroundStyle(hourColor(hour.averageBPM))
-                    .clipShape(.rect(cornerRadii: .init(topLeading: 3, topTrailing: 3)))
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
-                    AxisValueLabel(format: .dateTime.hour())
-                }
-            }
-            .frame(height: 140)
-            .accessibilityLabel("Average heart rate for each hour today")
-        }
-        .card()
-    }
-
-    /// Hours that averaged inside a zone take its colour; hours below Zone 1 stay neutral.
-    private func hourColor(_ bpm: Int) -> Color {
-        let number = zone(Double(bpm))
-        return number > 0 ? TetherBrand.zone(number) : TetherBrand.sub.opacity(0.45)
     }
 
     private func date(_ ts: Int) -> Date { Date(timeIntervalSince1970: TimeInterval(ts)) }

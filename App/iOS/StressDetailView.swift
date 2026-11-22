@@ -31,16 +31,13 @@ struct StressDetailView: View {
     // MARK: Hero
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionLabel(text: "Today overall")
+        DetailHero(label: "Stress today", meaning: heroLine) {
             if let band = detail.dayBand {
-                Text(band.name).font(.system(size: 44, weight: .bold)).foregroundStyle(StressStyle.color(band))
+                Text(band.name).foregroundStyle(StressStyle.color(band))
+            } else {
+                Text("–").foregroundStyle(TetherBrand.sub)
             }
-            Text(heroLine).font(.subheadline).foregroundStyle(TetherBrand.sub)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .card()
-        .accessibilityElement(children: .combine)
     }
 
     private var heroLine: String {
@@ -207,13 +204,7 @@ struct StressDetailView: View {
     }
 
     private var howItsRead: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("How this is read").font(.subheadline.weight(.semibold))
-            Text("Each hour's heart rate and HRV are compared with the rest of your own day. Usual is a normal hour for you. Your strap sends no motion over this link, so a workout or a brisk walk can read as high.")
-                .font(.caption).foregroundStyle(TetherBrand.sub)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .card(padding: 14)
+        HowItsWorkedOut(text: "Each hour's heart rate and HRV are compared with the calmest part of your own day. Usual is a normal hour for you; high means heart rate up and HRV down together. It needs about 5 minutes of steady heart rate in an hour between 6 AM and 10 PM. Your strap's motion isn't used here yet, so a workout or a brisk walk can still read as high.")
     }
 
     /// Each point reads a full hour, so it's drawn at the middle of that hour.

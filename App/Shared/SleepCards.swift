@@ -5,8 +5,7 @@ import TetherCore
 enum SleepFormat {
     static func duration(minutes: Double?) -> String {
         guard let minutes else { return "–" }
-        let total = Int(minutes.rounded())
-        return "\(total / 60) h \(String(format: "%02d", total % 60)) m"
+        return DayLine.duration(minutes)
     }
 
     static func time(_ ts: Int?) -> String {
@@ -52,60 +51,127 @@ struct NightHeroCard: View {
     }
 }
 
+/// The night as one stepped path: a lane per stage (Awake at the top, Deep at the bottom), thin
+/// lines joining each change, then each stage's share of the night in the same top-to-bottom order.
 struct HypnogramCard: View {
     let night: NightSummary
-    private let order: [NightSummary.Stage.Kind] = [.wake, .rem, .light, .deep]
+    /// Top to bottom, as the lanes are drawn and the totals are listed.
+    private static let order: [NightSummary.Stage.Kind] = [.wake, .rem, .light, .deep]
+    private static let barHalfHeight = 0.34
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Stages").font(.headline)
                 Spacer()
                 Text("estimated from heart rate").font(.caption).foregroundStyle(TetherBrand.sub)
             }
-            Chart(night.stages) { stage in
-                RectangleMark(xStart: .value("Start", Date(timeIntervalSince1970: TimeInterval(stage.start))),
-                              xEnd: .value("End", Date(timeIntervalSince1970: TimeInterval(stage.end))),
-                              y: .value("Stage", SleepFormat.name(stage.kind)), height: 14)
-                    .foregroundStyle(SleepFormat.color(stage.kind))
-                    .clipShape(.rect(cornerRadius: 3))
-            }
-            .chartYScale(domain: order.map(SleepFormat.name))
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .hour, count: 2)) { _ in
-                    AxisValueLabel(format: .dateTime.hour()).foregroundStyle(TetherBrand.sub)
-                }
-            }
-            .chartYAxis {
-                AxisMarks { _ in AxisValueLabel().foregroundStyle(TetherBrand.sub) }
-            }
-            .frame(height: 150)
-            .accessibilityLabel("Sleep stages through the night")
-            HStack {
-                ForEach([NightSummary.Stage.Kind.deep, .rem, .light], id: \.self) { kind in
-                    stageTotal(kind)
-                    if kind != .light { Spacer() }
-                }
+            chart.frame(height: 150)
+            if total > 0 {
+                splitBar.frame(height: 8)
+                totals
             }
         }
         .card()
     }
 
-    private func stageTotal(_ kind: NightSummary.Stage.Kind) -> some View {
-        let minutes: Double? = switch kind {
-        case .deep: night.deepMin
-        case .rem: night.remMin
-        case .light: night.lightMin
-        case .wake: nil
-        }
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Circle().fill(SleepFormat.color(kind)).frame(width: 8, height: 8)
-                Text(SleepFormat.name(kind)).font(.caption).foregroundStyle(TetherBrand.sub)
+    // MARK: Chart
+
+    private var chart: some View {
+        Chart {
+            ForEach(Self.order, id: \.self) { kind in
+                RectangleMark(yStart: .value("Lane low", lane(kind) - 0.45), yEnd: .value("Lane high", lane(kind) + 0.45))
+                    .foregroundStyle(Color.white.opacity(0.035))
             }
-            Text(SleepFormat.duration(minutes: minutes)).font(.subheadline.weight(.semibold)).monospacedDigit()
+            ForEach(Array(zip(night.stages, night.stages.dropFirst())), id: \.0.id) { before, after in
+                if before.kind != after.kind {
+                    RuleMark(x: .value("Change", date(after.start)),
+                             yStart: .value("From", lane(before.kind)), yEnd: .value("To", lane(after.kind)))
+                        .foregroundStyle(Color.white.opacity(0.28))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                }
+            }
+            ForEach(night.stages) { stage in
+                RectangleMark(xStart: .value("Start", date(stage.start)), xEnd: .value("End", date(stage.end)),
+                              yStart: .value("Low", lane(stage.kind) - Self.barHalfHeight),
+                              yEnd: .value("High", lane(stage.kind) + Self.barHalfHeight))
+                    .foregroundStyle(SleepFormat.color(stage.kind))
+                    .clipShape(.rect(cornerRadius: 2))
+            }
         }
-        .accessibilityElement(children: .combine)
+        .chartYScale(domain: -0.5...3.5)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: Self.order.map(lane)) { value in
+                AxisValueLabel {
+                    if let index = value.as(Double.self), let kind = Self.order.first(where: { lane($0) == index }) {
+                        Text(SleepFormat.name(kind)).font(.caption).foregroundStyle(TetherBrand.sub)
+                    }
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .hour, count: 2)) { _ in
+                AxisGridLine().foregroundStyle(TetherBrand.cardStroke)
+                AxisValueLabel(format: .dateTime.hour()).foregroundStyle(TetherBrand.sub)
+            }
+        }
+        .accessibilityLabel(summary)
+    }
+
+    /// Deep sits on the bottom lane (0), Awake on the top (3).
+    private func lane(_ kind: NightSummary.Stage.Kind) -> Double {
+        Double(Self.order.count - 1 - (Self.order.firstIndex(of: kind) ?? 0))
+    }
+
+    // MARK: Totals
+
+    private func minutes(_ kind: NightSummary.Stage.Kind) -> Double {
+        Double(night.stages.filter { $0.kind == kind }.reduce(0) { $0 + ($1.end - $1.start) }) / 60
+    }
+
+    private var total: Double { Self.order.reduce(0) { $0 + minutes($1) } }
+
+    private func share(_ kind: NightSummary.Stage.Kind) -> Int { Int((minutes(kind) / max(total, 1) * 100).rounded()) }
+
+    private var splitBar: some View {
+        GeometryReader { geo in
+            let kinds = Self.order.filter { minutes($0) > 0 }
+            let gaps = CGFloat(max(kinds.count - 1, 0)) * 2
+            HStack(spacing: 2) {
+                ForEach(kinds, id: \.self) { kind in
+                    Rectangle().fill(SleepFormat.color(kind))
+                        .frame(width: max(2, (geo.size.width - gaps) * minutes(kind) / total))
+                }
+            }
+            .clipShape(.capsule)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var totals: some View {
+        Grid(alignment: .leading, horizontalSpacing: 8) {
+            GridRow {
+                ForEach(Self.order, id: \.self) { kind in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 5) {
+                            RoundedRectangle(cornerRadius: 2).fill(SleepFormat.color(kind)).frame(width: 8, height: 8)
+                            Text(SleepFormat.name(kind)).font(.caption).foregroundStyle(TetherBrand.sub)
+                        }
+                        Text(DayLine.duration(minutes(kind))).font(.subheadline.weight(.semibold)).monospacedDigit()
+                        Text("\(share(kind))%").font(.caption).foregroundStyle(TetherBrand.sub).monospacedDigit()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
+    private func date(_ ts: Int) -> Date { Date(timeIntervalSince1970: TimeInterval(ts)) }
+
+    private var summary: String {
+        let parts = Self.order.map { "\(SleepFormat.name($0)) \(DayLine.duration(minutes($0)))" }
+        return "Sleep stages through the night: " + parts.joined(separator: ", ")
     }
 }
 
