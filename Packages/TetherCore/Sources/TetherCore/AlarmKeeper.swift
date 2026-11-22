@@ -11,11 +11,22 @@ public final class AlarmKeeper {
         public var hour: Int
         public var minute: Int
         public var isOn: Bool
+        /// Smart wake window before the alarm time, in minutes; 0 is off.
+        public var windowMinutes: Int
 
-        public init(hour: Int, minute: Int, isOn: Bool) {
+        public init(hour: Int, minute: Int, isOn: Bool, windowMinutes: Int = 0) {
             self.hour = hour
             self.minute = minute
             self.isOn = isOn
+            self.windowMinutes = windowMinutes
+        }
+
+        public init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            hour = try values.decode(Int.self, forKey: .hour)
+            minute = try values.decode(Int.self, forKey: .minute)
+            isOn = try values.decode(Bool.self, forKey: .isOn)
+            windowMinutes = try values.decodeIfPresent(Int.self, forKey: .windowMinutes) ?? 0
         }
     }
 
@@ -45,6 +56,8 @@ public final class AlarmKeeper {
     private static let armedKey = "tether.alarm.armedFor"
     private static let refusedKey = "tether.alarm.refusedFor"
     private static let cancelKey = "tether.alarm.cancelPending"
+    /// The window-end time an early (smart) alarm was set for, so the keeper doesn't put the later one back.
+    private static let smartKey = "tether.alarm.smartFor"
 
     public init(defaults: UserDefaults, now: @escaping () -> Int, calendar: Calendar = .current,
                 send: @escaping ([UInt8]) -> Void) {
@@ -60,11 +73,47 @@ public final class AlarmKeeper {
 
     /// Turns the alarm on for `hour:minute`, every morning. Asking again after a refusal is allowed.
     public func set(hour: Int, minute: Int) {
-        save(Setting(hour: hour, minute: minute, isOn: true))
+        save(Setting(hour: hour, minute: minute, isOn: true, windowMinutes: setting?.windowMinutes ?? 0))
+        defaults.removeObject(forKey: Self.smartKey)
         defaults.removeObject(forKey: Self.refusedKey)
         defaults.removeObject(forKey: Self.armedKey)
         defaults.set(false, forKey: Self.cancelKey)
         arm(StrapAlarm.nextWake(hour: hour, minute: minute, after: now(), calendar: calendar))
+    }
+
+    /// Chooses the smart wake window. Nothing is sent: the strap keeps the alarm for the window's end.
+    public func setWindow(_ minutes: Int) {
+        guard var current = setting else { return }
+        current.windowMinutes = max(0, minutes)
+        save(current)
+    }
+
+    /// True inside the window before an alarm the strap has confirmed, until a smart alarm has been set.
+    public var inSmartWindow: Bool {
+        guard let setting, setting.isOn, setting.windowMinutes > 0, case .set(let wake) = status,
+              defaults.object(forKey: Self.smartKey) == nil || defaults.integer(forKey: Self.smartKey) != wake
+        else { return false }
+        let now = now()
+        return now >= wake - setting.windowMinutes * 60 && now < wake - Self.earlyLeadSeconds
+    }
+
+    /// True when today's alarm was moved earlier because you were surfacing.
+    public var wokeEarly: Bool {
+        guard let setting, defaults.object(forKey: Self.smartKey) != nil else { return false }
+        return defaults.integer(forKey: Self.smartKey) == StrapAlarm.nextWake(hour: setting.hour, minute: setting.minute,
+                                                                             after: now(), calendar: calendar)
+    }
+
+    /// How soon after the cue the strap buzzes.
+    static let earlyLeadSeconds = 60
+
+    /// You're surfacing inside the window: move the strap's alarm to a minute from now.
+    public func wakeEarly() {
+        guard inSmartWindow, case .set(let wake) = status, linkReady else { return }
+        defaults.set(wake, forKey: Self.smartKey)
+        let early = now() + Self.earlyLeadSeconds
+        StrapAlarm.armFrames(wakeAt: early, now: now(), clockSeq: nextSeq(), alarmSeq: nextSeq()).forEach(send)
+        status = .sending(wake: early)
     }
 
     /// Turns the alarm off and cancels it on the strap, now or when it next connects.
@@ -95,6 +144,8 @@ public final class AlarmKeeper {
     func tick() {
         guard let setting, setting.isOn else { return }
         let wake = StrapAlarm.nextWake(hour: setting.hour, minute: setting.minute, after: now(), calendar: calendar)
+        // A smart alarm moved earlier stands until the window's end has passed.
+        if defaults.object(forKey: Self.smartKey) != nil, defaults.integer(forKey: Self.smartKey) == wake { return }
         switch status {
         case .refused: return
         case .set(let armed) where armed == wake: return

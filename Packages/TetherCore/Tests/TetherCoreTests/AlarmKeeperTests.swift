@@ -134,6 +134,58 @@ struct AlarmKeeperTests {
         #expect(harness.commands == [StrapCommandPolicy.setClock, StrapCommandPolicy.setAlarm])
     }
 
+    // MARK: Smart wake window
+
+    @Test func insideTheWindowSurfacingMovesTheAlarmToAMinuteFromNow() {
+        let harness = Harness(clock: midnight + 22 * 3_600)
+        let alarm = keeper(harness)
+        alarm.linkChanged(ready: true)
+        alarm.set(hour: 7, minute: 0)
+        alarm.setWindow(30)
+        _ = alarm.receive(reply(StrapCommandPolicy.setAlarm, 1))
+        harness.sent.removeAll()
+        harness.clock = tomorrowSeven - 20 * 60
+        #expect(alarm.inSmartWindow)
+        alarm.wakeEarly()
+        #expect(harness.commands == [StrapCommandPolicy.setClock, StrapCommandPolicy.setAlarm])
+        #expect(alarm.status == .sending(wake: harness.clock + 60))
+        _ = alarm.receive(reply(StrapCommandPolicy.setAlarm, 1))
+        #expect(alarm.status == .set(wake: harness.clock + 60))
+        #expect(alarm.wokeEarly)
+        harness.sent.removeAll()
+        harness.clock += 5 * 60
+        alarm.tick()
+        #expect(harness.sent.isEmpty, "the early alarm stands until the window's end has passed")
+        harness.clock = tomorrowSeven + 600
+        alarm.tick()
+        #expect(alarm.status == .sending(wake: tomorrowSeven + 86_400), "then tomorrow's goes out as usual")
+    }
+
+    @Test func outsideTheWindowOrWithNoWindowNothingMoves() {
+        let harness = Harness(clock: midnight + 22 * 3_600)
+        let alarm = keeper(harness)
+        alarm.linkChanged(ready: true)
+        alarm.set(hour: 7, minute: 0)
+        _ = alarm.receive(reply(StrapCommandPolicy.setAlarm, 1))
+        harness.sent.removeAll()
+        harness.clock = tomorrowSeven - 10 * 60
+        #expect(!alarm.inSmartWindow, "no window chosen")
+        alarm.wakeEarly()
+        alarm.setWindow(15)
+        harness.clock = tomorrowSeven - 40 * 60
+        #expect(!alarm.inSmartWindow, "too early for a 15-minute window")
+        alarm.wakeEarly()
+        #expect(harness.sent.isEmpty)
+    }
+
+    @Test func aSavedAlarmFromBeforeWindowsStillLoads() throws {
+        let harness = Harness(clock: midnight)
+        harness.defaults.set(Data(#"{"hour":6,"minute":30,"isOn":true}"#.utf8), forKey: "tether.alarm.setting")
+        let alarm = keeper(harness)
+        #expect(alarm.setting == .init(hour: 6, minute: 30, isOn: true))
+        #expect(alarm.setting?.windowMinutes == 0)
+    }
+
     @Test func otherFramesAreLeftForHistory() {
         let alarm = keeper(Harness(clock: midnight))
         #expect(!alarm.receive(reply(WhoopCommandCode.sendHistoricalData, 1)))

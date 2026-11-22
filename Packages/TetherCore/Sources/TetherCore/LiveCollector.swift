@@ -108,6 +108,11 @@ public final class LiveCollector {
     @ObservationIgnored public var onHistorySynced: ((StrapHistoryOutcome) -> Void)?
     /// A double-tap on the strap: when it was tapped, and whether it's fresh enough to ask about now.
     @ObservationIgnored public var onMark: ((Int, Bool) -> Void)?
+    /// The last hour of live heart rate, for the smart wake window's cue.
+    @ObservationIgnored private var recentHR: [HRSample] = []
+    @ObservationIgnored private var lastSmartCheck = 0
+    /// How often, inside the window, to look for the cue.
+    static let smartCheckSeconds = 30
     /// A tap older than this arrived late (from history), so it's saved without asking about it.
     public static let freshTapSeconds = 2 * 60
     /// The strap's silent alarm, set over the data link.
@@ -353,6 +358,15 @@ public final class LiveCollector {
         }
     }
 
+    /// Inside the smart wake window, moves the alarm earlier once heart rate shows you're surfacing.
+    private func watchForSurfacing(bpm: Int, at ts: Int) {
+        recentHR.append(HRSample(ts: ts, bpm: bpm))
+        guard ts - lastSmartCheck >= Self.smartCheckSeconds else { return }
+        lastSmartCheck = ts
+        recentHR.removeAll { $0.ts <= ts - SmartWake.lookbackSeconds }
+        if alarm.inSmartWindow, SmartWake.surfacing(recentHR, now: ts) { alarm.wakeEarly() }
+    }
+
     /// Saves a tap with the next write and tells the app. Taps from before pairing aren't the owner's.
     private func markTapped(at ts: Int) {
         guard let pairedAt, ts >= pairedAt else { return }
@@ -383,6 +397,7 @@ public final class LiveCollector {
             heartRate = measurement.bpm
             lastSampleAt = ts
             batcher?.append(measurement, at: ts)
+            watchForSurfacing(bpm: measurement.bpm, at: ts)
         case .battery(let percent):
             batteryPercent = percent
         case .firmware(let version):

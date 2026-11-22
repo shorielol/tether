@@ -17,6 +17,20 @@ struct AlarmCard: View {
             if alarm.setting?.isOn == true {
                 DatePicker("Wake at", selection: wakeTime, displayedComponents: .hourAndMinute)
                     .font(.subheadline)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Smart window").font(.subheadline)
+                    Picker("Smart window", selection: window) {
+                        ForEach(SmartWake.windowChoices, id: \.self) { minutes in
+                            Text(minutes == 0 ? "Off" : "\(minutes) min").tag(minutes)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    if (alarm.setting?.windowMinutes ?? 0) > 0 {
+                        Text("In the \(alarm.setting?.windowMinutes ?? 0) minutes before, your strap buzzes as soon as your heart rate shows you're surfacing from deep sleep. Your phone has to be near the strap for this; otherwise it buzzes at the time you set.")
+                            .font(.footnote).foregroundStyle(TetherBrand.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             statusLine
             if case .refused = alarm.status, let setting = alarm.setting {
@@ -38,6 +52,11 @@ struct AlarmCard: View {
             note("Goes to your strap when it next connects.")
         case .sending:
             note("Sent to your strap, waiting for it to confirm.")
+        case .set(let wake) where alarm.wokeEarly:
+            Label("Moved to \(describe(wake)): you were surfacing, so your strap buzzes then.",
+                  systemImage: "sparkles")
+                .font(.subheadline).foregroundStyle(TetherBrand.good)
+                .fixedSize(horizontal: false, vertical: true)
         case .set(let wake):
             Label("Set on your strap for \(describe(wake)). It buzzes even if your phone is away.",
                   systemImage: "checkmark.circle.fill")
@@ -70,6 +89,10 @@ struct AlarmCard: View {
                     alarm.turnOff()
                 }
             })
+    }
+
+    private var window: Binding<Int> {
+        Binding(get: { alarm.setting?.windowMinutes ?? 0 }, set: { alarm.setWindow($0) })
     }
 
     private var wakeTime: Binding<Date> {
