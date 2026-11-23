@@ -69,6 +69,17 @@ public final class MarkLabels: @unchecked Sendable {
         return marks.filter { !gone.contains($0) }
     }
 
+    private static let twoTapsKey = "tether.marks.twoTaps"
+
+    /// Marks need two double-taps within `MarkFilter.pairSeconds`, so a knock doesn't count. On by default.
+    public var needsTwoTaps: Bool {
+        get { defaults.object(forKey: Self.twoTapsKey) == nil ? true : defaults.bool(forKey: Self.twoTapsKey) }
+        set { defaults.set(newValue, forKey: Self.twoTapsKey) }
+    }
+
+    /// Marks that have a name.
+    public var named: Set<Int> { Set(all.keys.compactMap(Int.init)) }
+
     /// Names used most recently first, each once.
     public var recent: [String] {
         var seen = Set<String>()
@@ -82,6 +93,44 @@ public final class MarkLabels: @unchecked Sendable {
     /// Every mark that carries `label`, matched without regard to case.
     public func marks(labelled label: String) -> [Int] {
         all.filter { $0.value.lowercased() == label.lowercased() }.compactMap { Int($0.key) }.sorted()
+    }
+}
+
+/// Which of the strap's taps count as marks. The strap reports a double-tap for knocks and bumps too,
+/// so by default a mark is two double-taps close together; taps while you're asleep don't count; and a
+/// mark you've named always stays. Every tap stays stored, so changing the setting re-reads them all.
+public enum MarkFilter {
+    /// The second double-tap must come within this many seconds of the first.
+    public static let pairSeconds = 10
+
+    public static func marks(taps: [Int], twoTaps: Bool, named: Set<Int>, asleep: [ClosedRange<Int>]) -> [Int] {
+        let sorted = Array(Set(taps)).sorted()
+        var marks: [Int] = []
+        var index = 0
+        while index < sorted.count {
+            let tap = sorted[index]
+            if named.contains(tap) {
+                marks.append(tap)
+                index += 1
+                continue
+            }
+            let sleeping = asleep.contains { $0.contains(tap) }
+            if !twoTaps {
+                if !sleeping { marks.append(tap) }
+                index += 1
+                continue
+            }
+            if index + 1 < sorted.count, sorted[index + 1] - tap <= pairSeconds {
+                if !sleeping { marks.append(tap) }
+                // Skip the pair's second tap and any more taps in the same burst.
+                var next = index + 1
+                while next < sorted.count, sorted[next] - tap <= pairSeconds { next += 1 }
+                index = next
+            } else {
+                index += 1
+            }
+        }
+        return marks
     }
 }
 

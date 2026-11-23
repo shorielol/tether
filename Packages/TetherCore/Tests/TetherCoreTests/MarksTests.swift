@@ -11,8 +11,25 @@ struct MarksTests {
     /// A real DOUBLE_TAP(14) EVENT frame from a WHOOP 5 strap, tapped at 1780910464.
     static let tapFrame = bytes("aa0110000100208130340e008089266a3d2a000030b8df92")
     static let tapTs = 1_780_910_464
+    /// The same tap moved 5 seconds later, with its checksum redone, as a second double-tap.
+    static var secondTapFrame: [UInt8] { retimed(tapFrame, by: 5) }
+
+    static func retimed(_ frame: [UInt8], by seconds: Int) -> [UInt8] {
+        var bytes = frame
+        let ts = UInt32(tapTs + seconds)
+        for i in 0..<4 { bytes[12 + i] = UInt8((ts >> (8 * UInt32(i))) & 0xFF) }
+        return whoop5Recrc(bytes)
+    }
     /// A real BATTERY_LEVEL event: not a tap.
     static let batteryFrame = bytes("aa01240001002eb130350300a589266a5118140002f3010000f90e00000000340806003500000000358eb56f")
+
+    /// A WHOOP 5 frame's payload CRC32 (over bytes 8 up to the trailer), redone after an edit.
+    static func whoop5Recrc(_ frame: [UInt8]) -> [UInt8] {
+        var bytes = frame
+        let c32 = crc32(Array(bytes[8..<(bytes.count - 4)]))
+        for i in 0..<4 { bytes[bytes.count - 4 + i] = UInt8((c32 >> (8 * UInt32(i))) & 0xFF) }
+        return bytes
+    }
 
     static func bytes(_ hex: String) -> [UInt8] {
         stride(from: 0, to: hex.count, by: 2).map { offset in
@@ -38,8 +55,10 @@ struct MarksTests {
 
     @Test func aTapIsSavedAndTheAppIsToldWhileItIsFresh() async {
         let sink = FakeSink()
+        let oneTap = defaults()
+        MarkLabels(defaults: oneTap).needsTwoTaps = false
         let (collector, source) = collector(now: Self.tapTs + 20, pairedAt: Self.tapTs - 3_600, sink: sink,
-                                            defaults: defaults())
+                                            defaults: oneTap)
         var told: [(Int, Bool)] = []
         collector.onMark = { told.append(($0, $1)) }
         source.send(.strapFrame(Self.tapFrame))
@@ -52,8 +71,10 @@ struct MarksTests {
 
     @Test func aTapThatArrivesLateIsSavedQuietly() async {
         let sink = FakeSink()
+        let oneTap = defaults()
+        MarkLabels(defaults: oneTap).needsTwoTaps = false
         let (collector, source) = collector(now: Self.tapTs + 3 * 3_600, pairedAt: Self.tapTs - 3_600, sink: sink,
-                                            defaults: defaults())
+                                            defaults: oneTap)
         var told: [(Int, Bool)] = []
         collector.onMark = { told.append(($0, $1)) }
         source.send(.strapFrame(Self.tapFrame))
@@ -85,6 +106,44 @@ struct MarksTests {
         store.set("  ", for: 200)
         #expect(store.label(for: 200) == nil, "a blank name clears the label")
         #expect(MarkLabels(defaults: store.defaults).label(for: 300) == "Coffee", "labels survive a relaunch")
+    }
+
+    // MARK: Accidental taps
+
+    @Test func withTwoTapsOnlyAPairWithinTenSecondsIsAMark() {
+        let taps = [100, 106, 500, 2_000, 2_003, 2_009, 5_000, 5_030]
+        #expect(MarkFilter.marks(taps: taps, twoTaps: true, named: [], asleep: []) == [100, 2_000])
+        #expect(MarkFilter.marks(taps: taps, twoTaps: false, named: [], asleep: []) == taps)
+    }
+
+    @Test func aNamedMarkAlwaysStays() {
+        #expect(MarkFilter.marks(taps: [100, 500], twoTaps: true, named: [500], asleep: []) == [500])
+    }
+
+    @Test func tapsWhileAsleepAreKnocksNotMarks() {
+        #expect(MarkFilter.marks(taps: [100, 104, 9_000, 9_004], twoTaps: true, named: [], asleep: [50...1_000]) == [9_000])
+        #expect(MarkFilter.marks(taps: [100], twoTaps: false, named: [100], asleep: [50...1_000]) == [100])
+    }
+
+    @Test func twoTapsIsTheDefaultAndCanBeTurnedOff() {
+        let store = MarkLabels(defaults: defaults())
+        #expect(store.needsTwoTaps)
+        store.needsTwoTaps = false
+        #expect(!MarkLabels(defaults: store.defaults).needsTwoTaps)
+    }
+
+    @Test func liveTheAppIsOnlyToldOnceThePairArrives() async {
+        let sink = FakeSink()
+        let defaults = defaults()
+        let (collector, source) = collector(now: Self.tapTs + 20, pairedAt: Self.tapTs - 3_600, sink: sink, defaults: defaults)
+        var told: [Int] = []
+        collector.onMark = { mark, _ in told.append(mark) }
+        source.send(.strapFrame(Self.tapFrame))
+        #expect(told.isEmpty, "one double-tap could be a knock")
+        source.send(.strapFrame(Self.secondTapFrame))
+        #expect(told == [Self.tapTs])
+        await collector.flush()
+        #expect(await sink.written.flatMap(\.events).count == 2, "both taps are kept; marks are read from them")
     }
 
     @Test func aDeletedMarkStaysGoneEvenIfTheStrapSendsItAgain() {

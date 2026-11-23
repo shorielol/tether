@@ -224,6 +224,20 @@ final class AppModel {
         defaults.set(night.day, forKey: Self.healthNotifiedKey)
     }
 
+    var marksNeedTwoTaps: Bool {
+        get { _ = labelsVersion; return markLabels.needsTwoTaps }
+        set {
+            markLabels.needsTwoTaps = newValue
+            labelsVersion += 1
+            Task { await refreshMarks() }
+        }
+    }
+
+    /// Deletes every mark that hasn't been named.
+    func clearUnnamedMarks() {
+        for mark in marks where markLabels.label(for: mark) == nil { deleteMark(mark) }
+    }
+
     var marksToday: [Int] {
         let start = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
         return marks.filter { $0 >= start }
@@ -247,8 +261,13 @@ final class AppModel {
         guard let pairedAt = collector.pairedAt else { marks = []; return }
         await collector.flush()
         let now = Int(Date().timeIntervalSince1970)
-        guard let stored = try? await sink.marks(from: max(pairedAt, now - Self.marksLookback), to: now) else { return }
-        let found = markLabels.visible(stored)
+        guard let taps = try? await sink.marks(from: max(pairedAt, now - Self.marksLookback), to: now) else { return }
+        let asleep = nights.compactMap { night -> ClosedRange<Int>? in
+            guard let start = night.sleepStart, let end = night.sleepEnd, start < end else { return nil }
+            return start...end
+        }
+        let found = markLabels.visible(MarkFilter.marks(taps: taps, twoTaps: markLabels.needsTwoTaps,
+                                                        named: markLabels.named, asleep: asleep))
         if found != marks { marks = found }
         for mark in found where markWindows[mark] == nil && now >= mark + MarkWindow.afterSeconds {
             if let window = try? await sink.window(around: mark) { markWindows[mark] = window }

@@ -381,12 +381,25 @@ public final class LiveCollector {
     }
 
     /// Saves a tap with the next write and tells the app. Taps from before pairing aren't the owner's.
+    /// With two-tap marks on, a lone double-tap waits here for its pair.
+    @ObservationIgnored private var lastTap: Int?
+
     private func markTapped(at ts: Int) {
         guard let pairedAt, ts >= pairedAt else { return }
         var streams = Streams(hr: [], rr: [])
         streams.events = [WhoopEvent(ts: ts, kind: StrapTap.kind, payload: [:])]
         pending.append(streams)
-        onMark?(ts, now() - ts <= Self.freshTapSeconds)
+        let fresh = now() - ts <= Self.freshTapSeconds
+        guard MarkLabels(defaults: defaults).needsTwoTaps else {
+            onMark?(ts, fresh)
+            return
+        }
+        if let first = lastTap, ts > first, ts - first <= MarkFilter.pairSeconds {
+            lastTap = nil
+            onMark?(first, now() - first <= Self.freshTapSeconds)
+        } else {
+            lastTap = ts
+        }
     }
 
     public func startAutoFlush(every seconds: Int = 30) {
