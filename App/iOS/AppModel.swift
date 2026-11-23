@@ -388,7 +388,7 @@ final class AppModel {
                 await self?.refreshMarks()
                 await self?.refreshJournal()
                 await self?.scheduleBedtimeReminder()
-                self?.publishTonight()
+                self?.publishPlan()
                 await self?.scheduleGapAlert()
                 await self?.syncFolder()
                 try? await Task.sleep(for: .seconds(30))
@@ -526,6 +526,7 @@ final class AppModel {
                 await self?.refreshRecordingCard(canStart: false)
                 await self?.scheduleGapAlert()
                 await self?.morningPass()
+                self?.publishPlan()
                 try? await Task.sleep(for: Self.morningTick)
             }
         }
@@ -593,18 +594,42 @@ final class AppModel {
         }
     }
 
-    /// Tonight's need, bedtime and alarm for the lock-screen widgets; reloads them only when one moved.
-    private func publishTonight() {
-        guard let store = SnapshotStore.shared(), let coach = sleepCoach else { return }
+    /// Today's plan for the Now widget: Charge, the energy forecast's times, bedtime and the alarm. Reloads the
+    /// widgets only when something they show moved.
+    private func publishPlan() {
+        guard let store = SnapshotStore.shared() else { return }
+        let calendar = Calendar.current
+        let dayStart = Int(calendar.startOfDay(for: .now).timeIntervalSince1970)
+        let chargeNight = latestNight ?? lastNight
+        let zone = chargeNight?.charge.map(ChargeZone.init(charge:))
+        let band = zone.map(EffortTarget.band(for:))
+        let forecast = energyForecast
+        let coach = sleepCoach
         let alarm = collector.alarm
-        let on = alarm.setting?.isOn == true
         var confirmed = false
         if case .set = alarm.status { confirmed = true }
-        let tonight = TonightSnapshot(savedAt: Int(Date().timeIntervalSince1970), needMin: coach.need.totalMin,
-                                      bedtimeMinute: coach.bedtimeMinute,
-                                      alarmMinute: on ? (alarm.setting.map { $0.hour * 60 + $0.minute }) : nil,
-                                      alarmConfirmed: on && confirmed)
-        if (try? store.writeTonight(tonight)) == true { WidgetCenter.shared.reloadAllTimelines() }
+        let alarmAt: Int? = alarm.setting.flatMap { setting in
+            guard setting.isOn else { return nil }
+            if case .set(let wake) = alarm.status { return wake }
+            return StrapAlarm.nextWake(hour: setting.hour, minute: setting.minute, after: Int(Date().timeIntervalSince1970))
+        }
+        // A bedtime before noon is after midnight, so it belongs to tomorrow's date.
+        let bedtimeAt = coach.map { dayStart + ($0.bedtimeMinute < 12 * 60 ? $0.bedtimeMinute + 1_440 : $0.bedtimeMinute) * 60 }
+        let energy: [Int] = forecast.map { forecast in
+            (6...24).map { hour in
+                let nearest = forecast.points.min { abs($0.minute - hour * 60) < abs($1.minute - hour * 60) }
+                return Int((nearest?.level ?? 0).rounded())
+            }
+        } ?? []
+        let plan = DayPlan(day: WakeDay.key(for: .now), dayStart: dayStart,
+                           chargePercent: chargeNight?.charge.map { Int($0.rounded()) }, zoneName: zone?.name,
+                           advice: zone?.advice, sleepMin: lastNight?.totalSleepMin,
+                           targetLow: band.map { Int($0.low) }, targetHigh: band.map { Int($0.high) },
+                           sharpest: forecast?.bestWindow, dipMinute: forecast?.dipMinute,
+                           coffeeByMinute: forecast?.coffeeCutoffMinute, napWindow: forecast?.napWindow, energy: energy,
+                           bedtimeAt: bedtimeAt, needMin: coach?.need.totalMin, alarmAt: alarmAt,
+                           alarmConfirmed: alarmAt != nil && confirmed)
+        if (try? store.writePlan(plan)) == true { WidgetCenter.shared.reloadAllTimelines() }
     }
 
     private func publishMorning(night: NightSummary?, baselineNights: Int) {
@@ -662,8 +687,7 @@ final class AppModel {
                                        sleepMin: 437, rest: 81, charge: 67, baselineNights: 6, restingHR: 52,
                                        skinTempDevC: 0.3)
         try? SnapshotStore.shared()?.write(snapshot)
-        try? SnapshotStore.shared()?.writeTonight(TonightSnapshot(savedAt: 0, needMin: 560, bedtimeMinute: 22 * 60 + 15,
-                                                                  alarmMinute: 7 * 60, alarmConfirmed: true))
+        publishPlan()
         WidgetCenter.shared.reloadAllTimelines()
     }
     #endif

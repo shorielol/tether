@@ -2,17 +2,13 @@ import SwiftUI
 import TetherSnapshot
 import WidgetKit
 
-/// Three small lock-screen widgets for under the clock. They show this morning's numbers once the phone
+/// The Now widget, the Charge ring for under the clock, and the recording card. They show this morning's numbers once the phone
 /// has seen the night end (AppModel.morningPass), and dashes from 04:00 until the next night is scored.
 @main
 struct TetherWidgetBundle: WidgetBundle {
     var body: some Widget {
+        NowWidget()
         ChargeWidget()
-        SleepWidget()
-        RestingHRWidget()
-        SkinTempWidget()
-        TonightWidget()
-        AlarmWidget()
         RecordingLiveActivity()
     }
 }
@@ -68,32 +64,6 @@ struct ChargeWidget: Widget {
     }
 }
 
-struct SleepWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "tether.sleep", provider: MorningProvider()) { entry in
-            SleepView(snapshot: entry.fresh)
-                .containerBackground(for: .widget) {}
-                .widgetURL(URL(string: "tether://sleep"))
-        }
-        .configurationDisplayName("Sleep")
-        .description("Hours slept last night. The ring is your Rest score.")
-        .supportedFamilies([.accessoryCircular])
-    }
-}
-
-struct RestingHRWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "tether.restingHR", provider: MorningProvider()) { entry in
-            RestingHRView(snapshot: entry.fresh)
-                .containerBackground(for: .widget) {}
-                .widgetURL(URL(string: "tether://sleep"))
-        }
-        .configurationDisplayName("Resting heart rate")
-        .description("Last night's resting heart rate.")
-        .supportedFamilies([.accessoryCircular])
-    }
-}
-
 // MARK: - Views
 
 private let dash = "–"
@@ -124,43 +94,6 @@ struct ChargeView: View {
     }
 }
 
-struct SleepView: View {
-    let snapshot: MorningSnapshot?
-
-    var body: some View {
-        Gauge(value: (snapshot?.rest ?? 0) / 100) {
-            Image(systemName: "moon.fill")
-        } currentValueLabel: {
-            Text(snapshot?.sleepMin.map(Self.hoursMinutes) ?? dash)
-                .font(.callout).fontWeight(.semibold).monospacedDigit()
-        }
-        .gaugeStyle(.accessoryCircular)
-        .widgetAccentable()
-    }
-
-    /// 437 → "7:17".
-    static func hoursMinutes(_ minutes: Double) -> String {
-        let total = Int(minutes.rounded())
-        return "\(total / 60):" + String(format: "%02d", total % 60)
-    }
-}
-
-struct RestingHRView: View {
-    let snapshot: MorningSnapshot?
-
-    var body: some View {
-        ZStack {
-            AccessoryWidgetBackground()
-            VStack(spacing: 0) {
-                Image(systemName: "heart.fill").font(.caption2).widgetAccentable()
-                Text(snapshot?.restingHR.map(String.init) ?? dash)
-                    .font(.title3).fontWeight(.semibold).monospacedDigit()
-                Text("bpm").font(.system(size: 9)).opacity(0.7)
-            }
-        }
-    }
-}
-
 // MARK: - Previews
 
 private let previewEntries: [MorningEntry] = [
@@ -171,5 +104,3 @@ private let previewEntries: [MorningEntry] = [
 ]
 
 #Preview("Charge", as: .accessoryCircular) { ChargeWidget() } timeline: { for e in previewEntries { e } }
-#Preview("Sleep", as: .accessoryCircular) { SleepWidget() } timeline: { for e in previewEntries { e } }
-#Preview("Resting HR", as: .accessoryCircular) { RestingHRWidget() } timeline: { for e in previewEntries { e } }
