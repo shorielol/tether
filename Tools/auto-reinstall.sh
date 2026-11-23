@@ -9,7 +9,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-DEVICE="YOUR-IPHONE-ID"
+# Your iPhone's id (`xcrun devicectl list devices`), kept out of the repo: set TETHER_DEVICE_ID or write it
+# to ~/Library/Application Support/Tether/device-id.
+DEVICE="${TETHER_DEVICE_ID:-$(cat "$HOME/Library/Application Support/Tether/device-id" 2>/dev/null)}"
+[ -n "$DEVICE" ] || { echo "no iPhone id: set TETHER_DEVICE_ID or write it to ~/Library/Application Support/Tether/device-id"; exit 2; }
 BUNDLE_ID="com.shorielol.tether"
 # The app and its lock-screen widget extension each carry their own 7-day profile (ADR-005).
 BUNDLE_IDS=("$BUNDLE_ID" "$BUNDLE_ID.widgets")
