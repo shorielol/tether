@@ -2,153 +2,151 @@ import SwiftUI
 import TetherCore
 
 enum MacSection: String, CaseIterable, Identifiable {
-    case today = "Today", sleep = "Sleep", trends = "Trends", strap = "Strap"
+    case day = "Day", sleep = "Sleep", trends = "Trends", strap = "Strap"
     var id: String { rawValue }
     var symbol: String {
         switch self {
-        case .today: "sun.max"
-        case .sleep: "moon"
-        case .trends: "chart.bar"
-        case .strap: "heart"
+        case .day: "sun.horizon"
+        case .sleep: "moon.zzz"
+        case .trends: "chart.xyaxis.line"
+        case .strap: "heart.circle"
         }
     }
+    /// Day and Sleep follow the date navigator; Trends and Strap don't.
+    var isDated: Bool { self == .day || self == .sleep }
 }
 
 struct MacRootView: View {
     @Environment(MacModel.self) private var model
-    @State private var section: MacSection? = .today
+    @SceneStorage("tether.section") private var section: MacSection = .day
+    @AppStorage("tether.trends.measure") private var trendMeasure: TrendMeasure = .charge
+    @AppStorage("tether.trends.days") private var trendDays = 14
 
     var body: some View {
         NavigationSplitView {
-            List(MacSection.allCases, selection: $section) { item in
+            List(MacSection.allCases, selection: Binding(get: { section }, set: { section = $0 ?? .day })) { item in
                 Label(item.rawValue, systemImage: item.symbol).tag(item)
             }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
-            .safeAreaInset(edge: .bottom) { SyncFooter().padding(12) }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
+            .safeAreaInset(edge: .bottom) { SyncStatus().padding(.horizontal, 16).padding(.bottom, 14) }
         } detail: {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) { detail }
-                    .padding(28)
-                    .frame(maxWidth: 1_100, alignment: .leading)
-            }
-            .background(TetherBrand.ink)
+            PageScaffold { page }
+            .navigationTitle(title)
+            .navigationSubtitle(subtitle)
+            .toolbar { toolbar }
         }
-        .foregroundStyle(TetherBrand.text)
-        .tint(TetherBrand.ember)
+        .focusedSceneValue(\.macSection, $section)
+        #if DEBUG
+        .onAppear {
+            // `-tether.fixtureSection sleep` opens a page directly, for screenshots without clicks.
+            if DebugFixture.isOn, let name = UserDefaults.standard.string(forKey: "tether.fixtureSection"),
+               let wanted = MacSection.allCases.first(where: { $0.rawValue.lowercased() == name }) {
+                section = wanted
+            }
+        }
+        #endif
     }
 
-    @ViewBuilder private var detail: some View {
-        if model.folderName == nil {
-            ChooseFolderCard()
-        } else {
-            switch section ?? .today {
-            case .today: MacTodayView()
-            case .sleep: MacSleepView()
-            case .trends:
-                ScreenHeader(eyebrow: "Last 14 days", title: "Trends")
-                NotYet(title: "Trends are next on the roadmap",
-                       detail: "Charge, hours asleep, HRV and resting heart rate over 14 and 30 days.").card()
-            case .strap:
-                ScreenHeader(eyebrow: "WHOOP 5.0", title: "Strap")
-                NotYet(title: "Connecting from this Mac comes next",
-                       detail: "Tether for Mac will hold the strap whenever your iPhone isn't, and send what it records to your phone.").card()
+    @ViewBuilder private var page: some View {
+        switch section {
+        case .day: DayView(openSleep: { section = .sleep })
+        case .sleep: MacSleepView()
+        case .trends: TrendsView()
+        case .strap: StrapPane()
+        }
+    }
+
+    private var title: String {
+        guard section.isDated else { return section.rawValue }
+        if model.isShowingToday { return section == .sleep ? "Last night" : "Today" }
+        return model.selectedDay.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    }
+
+    private var subtitle: String {
+        guard section.isDated else { return "" }
+        return model.isShowingToday ? model.selectedDay.formatted(.dateTime.weekday(.wide).day().month(.wide)) : ""
+    }
+
+    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if section.isDated {
+            ToolbarItemGroup(placement: .navigation) {
+                Button { model.moveDay(by: -1) } label: { Label("Previous Day", systemImage: "chevron.left") }
+                    .disabled(!model.canGoBack)
+                    .help("Previous day")
+                Button { model.moveDay(by: 1) } label: { Label("Next Day", systemImage: "chevron.right") }
+                    .disabled(model.isShowingToday)
+                    .help("Next day")
+            }
+            ToolbarItem(placement: .navigation) {
+                Button("Today") { model.goToToday() }
+                    .disabled(model.isShowingToday)
+                    .help("Go to today")
             }
         }
+        if section == .trends {
+            ToolbarItem(placement: .navigation) {
+                HStack(spacing: Space.m) {
+                    Picker("Measure", selection: $trendMeasure) {
+                        ForEach(TrendMeasure.allCases) { Text($0.shortTitle).tag($0) }
+                    }
+                    Picker("Range", selection: $trendDays) {
+                        Text("14 days").tag(14)
+                        Text("30 days").tag(30)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+        ToolbarItem(placement: .primaryAction) { HolderStatus() }
     }
 }
 
-private struct ChooseFolderCard: View {
+/// The live tether plus a few words: who has the strap right now.
+struct HolderStatus: View {
     @Environment(MacModel.self) private var model
 
     var body: some View {
-        ScreenHeader(eyebrow: "Tether for Mac", title: "Pair with your iPhone")
-        VStack(alignment: .leading, spacing: 12) {
-            NotYet(title: "Pick the folder your iPhone writes to",
-                   detail: "On the iPhone: Strap → Your files → Choose folder, in iCloud Drive. Then pick the same folder here. Tether for Mac reads one file per day from it.")
-            PrimaryButton("Choose folder", fullWidth: false) { model.chooseFolder() }
+        let status = StrapStatus.live(model.recorder, folderConnected: model.folderName != nil)
+        HStack(spacing: 10) {
+            LiveTether(holder: status.holder, handedOver: status.handedOver)
+                .frame(width: 92)
+            Text(status.toolbarText)
+                .font(.callout.weight(.medium))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .fixedSize()
         }
-        .card()
-        if let error = model.readError {
-            Text(error).font(.callout).foregroundStyle(TetherBrand.headsUp)
-        }
+        .padding(.horizontal, 8)
+        .accessibilityElement(children: .combine)
     }
 }
 
-private struct SyncFooter: View {
+/// Sidebar footer: when the iPhone last wrote, in plain text.
+private struct SyncStatus: View {
     @Environment(MacModel.self) private var model
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             if let synced = model.lastSyncedAt {
-                Label("Synced from iPhone", systemImage: "circle.fill")
-                    .labelStyle(.titleAndIcon).font(.caption.weight(.semibold))
-                    .foregroundStyle(TetherBrand.good)
-                Text("\(synced.formatted(.relative(presentation: .named))) · iCloud Drive / \(model.folderName ?? "")")
-                    .font(.caption).foregroundStyle(TetherBrand.sub)
+                Text("Synced from iPhone").font(.caption.weight(.medium))
+                Text(synced, format: .relative(presentation: .named)).font(.caption).foregroundStyle(.secondary)
             } else {
-                Text(model.folderName == nil ? "Not paired with your iPhone yet" : "Waiting for your iPhone's first file")
-                    .font(.caption).foregroundStyle(TetherBrand.sub)
+                Text(model.folderName == nil ? "Not connected to your iPhone" : "Waiting for your iPhone's first file")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            if model.folderName != nil {
-                Button("Change folder") { model.chooseFolder() }
-                    .buttonStyle(.link).font(.caption)
+            if let error = model.readError ?? model.recorder.exportError {
+                Text(error).font(.caption).foregroundStyle(Theme.caution).lineLimit(3)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.white.opacity(0.04), in: .rect(cornerRadius: 12))
     }
 }
 
-private struct MacTodayView: View {
-    @Environment(MacModel.self) private var model
-    private let columns = [GridItem(.adaptive(minimum: 340), spacing: 16, alignment: .top)]
+// MARK: - Focused values for menu commands
 
-    var body: some View {
-        ScreenHeader(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)), title: "Today")
-        if let today = model.today, !today.isEmpty {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
-                if let night = model.lastNight, let charge = night.charge {
-                    ChargeCard(charge: charge, drivers: night.drivers)
-                } else {
-                    BaselineRow(progress: model.baseline)
-                }
-                HStack(alignment: .top, spacing: 16) {
-                    EffortCard(today: today)
-                    CaloriesCard(today: today)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                HeartRateDayCard(today: today)
-                ZonesCard(today: today)
-                StressCard(today: today)
-                VStack(spacing: 16) {
-                    if let night = model.lastNight { LastNightRow(night: night) }
-                    CoverageRow(today: today)
-                }
-            }
-        } else {
-            NotYet(title: "Nothing from today yet",
-                   detail: "Your iPhone writes today's file every 15 minutes while Tether is open, and when you leave the app.").card()
-        }
-    }
-}
-
-private struct MacSleepView: View {
-    @Environment(MacModel.self) private var model
-    private let columns = [GridItem(.adaptive(minimum: 340), spacing: 16, alignment: .top)]
-
-    var body: some View {
-        ScreenHeader(eyebrow: "Last night", title: "Sleep")
-        if let night = model.lastNight {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
-                NightHeroCard(night: night)
-                ChargeOrCountdown(night: night, progress: model.baseline)
-                HypnogramCard(night: night)
-                NightVitalsCard(night: night)
-                RecentNightsCard(nights: model.nights)
-            }
-        } else {
-            NotYet(title: "No nights yet", detail: "Nights appear here after your iPhone scores them each morning.").card()
-        }
-    }
+extension FocusedValues {
+    @Entry var macSection: Binding<MacSection>?
 }

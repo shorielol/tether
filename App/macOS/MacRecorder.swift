@@ -106,6 +106,16 @@ final class MacRecorder {
         }
     }
 
+    /// Minute averages this Mac recorded itself in `window`, for drawing before the phone imports them.
+    func minutes(in window: ClosedRange<Int>, profile: UserProfile?) async -> [TodaySnapshot.MinutePoint] {
+        guard let batch = try? await sink.readBack(from: window.lowerBound, to: window.upperBound),
+              !batch.streams.hr.isEmpty else { return [] }
+        return await Task.detached(priority: .utility) {
+            TodayAnalytics.compute(hr: batch.streams.hr, rr: [], profile: profile, window: window,
+                                   now: window.upperBound).minuteSeries
+        }.value
+    }
+
     func forget(erase: Bool) async {
         await collector.forgetStrap(erase: erase)
         markHandedOver(at: nil)
