@@ -233,6 +233,19 @@ final class AppModel {
         }
     }
 
+    /// Every tap read from the store, marks or not, so deleting everything leaves nothing to resurface.
+    @ObservationIgnored private var storedTaps: [Int] = []
+
+    /// Deletes every mark, named or not, and every stored tap up to now.
+    func deleteAllMarks() {
+        let everything = Array(Set(storedTaps + marks))
+        markLabels.delete(all: everything)
+        marks = []
+        markWindows = [:]
+        labelsVersion += 1
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: everything.map { "tether.mark.\($0)" })
+    }
+
     /// Deletes every mark that hasn't been named.
     func clearUnnamedMarks() {
         for mark in marks where markLabels.label(for: mark) == nil { deleteMark(mark) }
@@ -266,6 +279,7 @@ final class AppModel {
             guard let start = night.sleepStart, let end = night.sleepEnd, start < end else { return nil }
             return start...end
         }
+        storedTaps = taps
         let found = markLabels.visible(MarkFilter.marks(taps: taps, twoTaps: markLabels.needsTwoTaps,
                                                         named: markLabels.named, asleep: asleep))
         if found != marks { marks = found }

@@ -40,6 +40,7 @@ struct MarksView: View {
     }
 
     @State private var confirmingClear = false
+    @State private var confirmingDeleteAll = false
 
     /// How a mark is made, and a way to clear out accidental ones.
     private var settings: some View {
@@ -60,8 +61,18 @@ struct MarksView: View {
                 }
                 .font(.subheadline)
             }
+            if !model.marks.isEmpty {
+                Button("Delete all marks", role: .destructive) { confirmingDeleteAll = true }
+                    .font(.subheadline)
+            }
         }
         .card()
+        .confirmationDialog("Delete all \(model.marks.count) marks?", isPresented: $confirmingDeleteAll,
+                            titleVisibility: .visible) {
+            Button("Delete all", role: .destructive) { model.deleteAllMarks() }
+        } message: {
+            Text("Named ones too, and any taps the filter is hiding. This can't be undone.")
+        }
         .confirmationDialog("Clear \(unnamed) unnamed marks?", isPresented: $confirmingClear, titleVisibility: .visible) {
             Button("Clear them", role: .destructive) { model.clearUnnamedMarks() }
         } message: {

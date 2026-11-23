@@ -155,6 +155,14 @@ struct MarksTests {
         #expect(MarkLabels(defaults: store.defaults).visible([100]) == [], "and across a relaunch")
     }
 
+    @Test func deletingAllClearsNamedOnesToo() {
+        let store = MarkLabels(defaults: defaults())
+        store.set("Coffee", for: 100)
+        store.delete(all: [100, 200, 300])
+        #expect(store.visible([100, 200, 300, 400]) == [400])
+        #expect(store.label(for: 100) == nil)
+    }
+
     /// Heart rate at 62 for 15 minutes before each mark, 71 for the half hour after.
     private func hrAround(_ marks: [Int], before: Int = 62, after: Int = 71) -> [HRSample] {
         marks.flatMap { mark in

@@ -63,6 +63,14 @@ public final class MarkLabels: @unchecked Sendable {
         deleted = gone
     }
 
+    /// Deletes many at once, with one write.
+    public func delete(all marks: [Int]) {
+        var labels = all
+        for mark in marks { labels[String(mark)] = nil }
+        all = labels
+        deleted = deleted.union(marks)
+    }
+
     /// The marks that haven't been deleted.
     public func visible(_ marks: [Int]) -> [Int] {
         let gone = deleted
