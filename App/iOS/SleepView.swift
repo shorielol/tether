@@ -41,11 +41,7 @@ struct SleepView: View {
     /// When, how much of the time in bed was sleep, and how it sits against your normal.
     private func meaning(_ night: NightSummary) -> String {
         var parts = ["\(SleepFormat.time(night.sleepStart)) – \(SleepFormat.time(night.sleepEnd))"]
-        if let efficiency = night.efficiency { parts.append("\(Int((efficiency * 100).rounded()))% asleep in bed") }
-        let band = NormalBand(past: model.nights.filter { $0.day < night.day }.compactMap(\.totalSleepMin))
-        if let band, let minutes = night.totalSleepMin {
-            parts.append(minutes < band.low ? "short of your normal" : minutes > band.high ? "longer than your normal" : "in your normal")
-        }
+        if let efficiency = night.efficiency { parts.append("\(Int((efficiency * 100).rounded()))% efficient") }
         return parts.joined(separator: " · ")
     }
 }

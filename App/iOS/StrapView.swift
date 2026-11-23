@@ -27,8 +27,8 @@ struct StrapView: View {
             BedtimeCard(items: model.bedtimeItems)
             FilesCard(picking: $pickingFolder)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Coverage, last 7 nights").font(.headline)
-                Text("Shows after your first recorded night: how much of each night was captured, and where the gaps were.")
+                Label("Coverage, last 7 nights", systemImage: "chart.bar").font(.headline)
+                Text("Shows after your first night.")
                     .font(.subheadline).foregroundStyle(TetherBrand.sub)
             }
             .card()
@@ -125,7 +125,7 @@ private struct HistoryCard: View {
         let collector = model.collector
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Strap history").font(.headline)
+                Label("Strap history", systemImage: "arrow.triangle.2.circlepath").font(.headline)
                 Spacer()
                 if collector.isSyncingHistory { ProgressView().controlSize(.small) }
             }
@@ -159,7 +159,7 @@ private struct HistoryCard: View {
             return "The strap didn't accept this phone, so Tether records live heart rate only. If another device (like a Mac) is paired with the strap, forget it there first, then try again."
         case .unavailable:
             return lastSynced(collector).map { "Last synced \($0). Syncs again when the strap is connected." }
-                ?? "Reads skin temperature, motion and missed minutes from the strap once it's connected."
+                ?? "Skin temp, motion and missed minutes, once connected."
         case .ready:
             if collector.isSyncingHistory { return "Reading the strap's memory…" }
             return lastSynced(collector).map { "Up to date as of \($0)\(rowsNote(collector))." } ?? "Connected. First sync starting."
@@ -221,7 +221,7 @@ private struct BedtimeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Tonight's bedtime check").font(.headline)
+            Label("Tonight's bedtime check", systemImage: "checklist").font(.headline)
             ForEach(items) { item in
                 HStack {
                     Text(item.label)
@@ -249,7 +249,7 @@ private struct ExpiryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.headline).foregroundStyle(status.needsReinstallSoon ? TetherBrand.headsUp : TetherBrand.text)
-            Text("Free Apple account. Your Mac renews it when this phone is on the same Wi-Fi. If it lapses, Tether stops recording until it is renewed. Your history stays on the phone.")
+            Text("Your Mac renews this on the same Wi-Fi. History stays on the phone if it lapses.")
                 .font(.subheadline).foregroundStyle(TetherBrand.sub)
         }
         .card()
@@ -269,14 +269,14 @@ private struct FilesCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Your files").font(.headline)
+            Label("Your files", systemImage: "folder").font(.headline)
             if let name = model.folderName {
                 Text("iCloud Drive / \(name)").font(.subheadline.weight(.semibold))
                 Text(model.lastSavedAt.map { "Saved at \($0.formatted(date: .omitted, time: .shortened)) · your Mac reads the same folder" }
                      ?? "Saving soon")
                     .font(.caption).foregroundStyle(TetherBrand.sub)
             } else {
-                Text("Pick a folder in iCloud Drive. Tether writes one readable file per day there, and Tether for Mac shows the same data from it.")
+                Text("One file a day in iCloud Drive, for Tether on your Mac.")
                     .font(.subheadline).foregroundStyle(TetherBrand.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -297,8 +297,8 @@ private struct GapAlertToggle: View {
     var body: some View {
         Toggle(isOn: Binding(get: { model.gapAlerts }, set: { model.gapAlerts = $0 })) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Tell me when the strap is out of touch").font(.subheadline.weight(.semibold))
-                Text("If your phone hasn't heard the strap for two hours, you get one notification. Never between 11 PM and 7 AM.")
+                Label("Tell me when the strap is out of touch", systemImage: "bell").font(.subheadline.weight(.semibold))
+                Text("After two hours without it. Never at night.")
                     .font(.caption).foregroundStyle(TetherBrand.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }

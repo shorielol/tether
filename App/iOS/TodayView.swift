@@ -3,7 +3,7 @@ import TetherCore
 
 /// The screens a Today card opens.
 enum TodayDetail: String, Hashable {
-    case stress, effort, recovery, sleep, marks, breathe, coach
+    case stress, effort, recovery, sleep, marks, breathe, coach, energy
 }
 
 struct TodayView: View {
@@ -11,6 +11,9 @@ struct TodayView: View {
     /// Owned by the tab bar, so links from widgets can open a detail screen or the strap sheet.
     @Binding var path: [TodayDetail]
     @Binding var showingStrap: Bool
+    @State private var showingCheckUp = false
+    /// The day the check up last popped up on its own, so it does that once a morning.
+    @AppStorage("tether.checkUp.offeredDay") private var offeredDay = ""
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -28,6 +31,16 @@ struct TodayView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(TetherBrand.ink)
+        }
+        .sheet(isPresented: $showingCheckUp) {
+            CheckUpSheet().presentationBackground(TetherBrand.ink)
+        }
+        .task(id: model.journalDue) {
+            let day = Date.now.formatted(.iso8601.year().month().day())
+            guard model.journalDue, offeredDay != day, !showingStrap else { return }
+            try? await Task.sleep(for: .seconds(1))
+            offeredDay = day
+            showingCheckUp = true
         }
     }
 
@@ -51,6 +64,8 @@ struct TodayView: View {
             BreatheView()
         case .coach:
             CoachView()
+        case .energy:
+            EnergyView()
         }
     }
 
@@ -62,9 +77,11 @@ struct TodayView: View {
         let sleepBand = Self.band(model.nights, before: night) { $0.totalSleepMin }
         return TabScreen {
             ScreenHeader(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)), title: "Today") {
-                StrapChip { showingStrap = true }
+                HStack(spacing: 8) {
+                    AskButton()
+                    StrapChip { showingStrap = true }
+                }
             }
-            SyncLine()
             ScoreStrip(charge: charge, chargeBand: Self.band(model.nights, before: chargeNight) { $0.charge },
                        progress: model.baseline, night: night, sleepBand: sleepBand, effort: model.today?.effort)
                 .padding(.top, 6)
@@ -73,34 +90,21 @@ struct TodayView: View {
                                   sleptMinutes: night?.totalSleepMin, sleepBand: sleepBand, effort: model.today?.effort))
                 .font(.title3.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
+            if model.journalDue {
+                Button { showingCheckUp = true } label: {
+                    Label("Quick check up", systemImage: "checklist").font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered).tint(TetherBrand.ember)
+            }
             if let today = model.today, !today.isEmpty {
                 DetailLink(.effort) {
                     TodayRibbon(today: today, sleep: Self.sleepSpan(night), now: Int(Date.now.timeIntervalSince1970),
                                 live: model.liveHeartRate, beat: model.collector.lastSampleAt, marks: model.marksToday)
                 }
-            } else {
-                NotYet(title: model.collector.isPaired ? "Collecting your first minutes" : "Not recording yet",
-                       detail: model.collector.isPaired
-                           ? "Your day's heart rate appears here within a minute of recording."
-                           : "Tap the strap button at the top to pair your strap and start your history.")
-                    .card()
             }
-            if model.journalDue { JournalCard() }
-            if let forecast = model.energyForecast {
-                EnergyCard(forecast: forecast, now: Int(Date.now.timeIntervalSince1970))
-            }
-            DetailLink(.recovery) { RecoveryCard(detail: model.recovery, charge: charge) }
-            if model.collector.isPaired {
-                DetailLink(.effort) { StepsRow(steps: model.steps) }
-            }
-            if let today = model.today, !today.isEmpty {
-                DetailLink(.stress) { StressRow(today: today) }
-            }
-            if model.collector.isPaired {
-                DetailLink(.marks) { MarksRow() }
-            }
-            DetailLink(.coach) { CoachRow() }
+            TodayTiles()
+            SyncLine().frame(maxWidth: .infinity)
         }
     }
 

@@ -38,7 +38,10 @@ struct HowItsWorkedOut: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 10)
         } label: {
-            Text("How this is worked out").font(.headline).foregroundStyle(TetherBrand.text)
+            Label { Text("How this is worked out").font(.subheadline.weight(.semibold)) } icon: {
+                Image(systemName: "info.circle").foregroundStyle(TetherBrand.sub)
+            }
+            .foregroundStyle(TetherBrand.text)
         }
         .tint(TetherBrand.sub)
         .card()

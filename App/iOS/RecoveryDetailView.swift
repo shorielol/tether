@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 import TetherCore
 
@@ -19,7 +18,6 @@ struct RecoveryDetailView: View {
                     drivers(detail)
                 }
                 measures(detail)
-                if detail.recent.count >= 2 { trend(detail) }
                 notMeasured
             } else {
                 NotYet(title: "No night scored yet",
@@ -75,26 +73,18 @@ struct RecoveryDetailView: View {
 
     private func measures(_ detail: RecoveryDetail) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Last night vs your normal").font(.headline)
-                Spacer()
-            }
-            .padding(.bottom, 8)
             ForEach(detail.measures) { measure in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(measure.name).font(.subheadline)
-                        Text(normalText(measure)).font(.caption).foregroundStyle(TetherBrand.sub)
-                    }
+                HStack(spacing: 12) {
+                    Image(systemName: VitalIcon.name(measure.name)).frame(width: 24).foregroundStyle(TetherBrand.sub)
+                    Text(measure.name).font(.subheadline)
                     Spacer()
-                    if let delta = measure.delta { deltaChip(measure, delta) }
                     Text("\(format(measure.value, measure.decimals)) \(measure.unit)")
                         .font(.subheadline.weight(.semibold)).monospacedDigit()
-                        .frame(minWidth: 78, alignment: .trailing)
                 }
-                .padding(.top, 8)
-                .padding(.bottom, measure.band == nil ? 8 : 6)
-                .accessibilityElement(children: .combine)
+                .padding(.top, 10)
+                .padding(.bottom, measure.band == nil ? 10 : 8)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(measure.name) \(format(measure.value, measure.decimals)) \(measure.unit), \(normalText(measure))")
                 if let band = measure.band {
                     RangeBar(placement: RangePlacement(value: measure.value, band: band,
                                                        domain: RangePlacement.domain(around: band, value: measure.value)),
@@ -114,62 +104,6 @@ struct RecoveryDetailView: View {
     private func normalText(_ measure: RecoveryDetail.Measure) -> String {
         guard let normal = measure.normal else { return "normal not set yet" }
         return "normal \(format(normal, measure.decimals)) \(measure.unit)"
-    }
-
-    private func deltaChip(_ measure: RecoveryDetail.Measure, _ delta: Double) -> some View {
-        let sign = delta > 0 ? "+" : delta < 0 ? "−" : "±"
-        let color: Color = switch measure.isBetter {
-        case true?: TetherBrand.good
-        case false?: TetherBrand.headsUp
-        case nil: TetherBrand.sub
-        }
-        return Text("\(sign)\(format(abs(delta), measure.decimals))")
-            .font(.caption.weight(.semibold)).monospacedDigit()
-            .foregroundStyle(color)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(color.opacity(0.14), in: .capsule)
-    }
-
-    // MARK: Trend
-
-    private func trend(_ detail: RecoveryDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Last \(detail.recent.count) nights").font(.headline)
-            miniChart(title: "HRV", unit: "ms", color: TetherBrand.good, minSpan: 20,
-                      points: detail.recent.compactMap { night in night.hrv.map { (night.day, $0) } })
-            miniChart(title: "Resting HR", unit: "bpm", color: TetherBrand.ember, minSpan: 10,
-                      points: detail.recent.compactMap { night in night.restingHR.map { (night.day, Double($0)) } })
-        }
-        .card()
-    }
-
-    /// `minSpan` keeps the axis at least that tall, so a one-beat wobble doesn't look like a swing.
-    private func miniChart(title: String, unit: String, color: Color, minSpan: Double,
-                           points: [(String, Double)]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title).font(.subheadline)
-                Spacer()
-                Text(points.last.map { "\(Int($0.1.rounded())) \(unit) last night" } ?? "–")
-                    .font(.caption).foregroundStyle(TetherBrand.sub).monospacedDigit()
-            }
-            Chart(points, id: \.0) { day, value in
-                LineMark(x: .value("Night", String(day.suffix(2))), y: .value(title, value))
-                    .foregroundStyle(color)
-                PointMark(x: .value("Night", String(day.suffix(2))), y: .value(title, value))
-                    .foregroundStyle(color).symbolSize(24)
-            }
-            .chartYScale(domain: domain(points.map(\.1), minSpan: minSpan))
-            .chartYAxis { AxisMarks(values: .automatic(desiredCount: 3)) }
-            .frame(height: 80)
-            .accessibilityLabel("\(title) over the last \(points.count) nights")
-        }
-    }
-
-    private func domain(_ values: [Double], minSpan: Double) -> ClosedRange<Double> {
-        guard let low = values.min(), let high = values.max() else { return 0...1 }
-        let pad = max(minSpan * 0.1, (minSpan - (high - low)) / 2)
-        return (low - pad)...(high + pad)
     }
 
     private var notMeasured: some View {

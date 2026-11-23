@@ -56,10 +56,33 @@ struct BreakdownCard: View {
         String(format: "%.\(decimals)f", value)
     }
 
+    /// Folded to one row until opened: the maths is there for whoever wants it, not in the way.
+    @State private var open = BreakdownCard.opensWhatIfForScreenshots
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.headline).padding(.bottom, accessory == nil ? 10 : 4)
-            if let accessory { accessory.padding(.bottom, 6) }
+            Button {
+                withAnimation(.snappy(duration: 0.25)) { open.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "function").foregroundStyle(TetherBrand.sub)
+                    Text(title).font(.headline)
+                    Spacer()
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(TetherBrand.sub)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(open ? "Hides the working" : "Shows the working")
+            if open { working }
+        }
+        .card()
+    }
+
+    @ViewBuilder private var working: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let accessory { accessory.padding(.vertical, 6) }
             row(title: startTitle, detail: startDetail) { Text(show(breakdown.start)) }
             ForEach(shownSteps) { step in
                 Divider().overlay(TetherBrand.cardStroke)
@@ -80,7 +103,7 @@ struct BreakdownCard: View {
                     .padding(.top, 12)
             }
         }
-        .card()
+        .padding(.top, 8)
     }
 
     private var shownSteps: [ScoreBreakdown.Step] {

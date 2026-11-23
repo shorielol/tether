@@ -9,6 +9,7 @@ struct StressDetailView: View {
     let detail: StressDetail
 
     @State private var selected: Date?
+    @State private var showsHours = false
 
     var body: some View {
         TabScreen {
@@ -152,10 +153,7 @@ struct StressDetailView: View {
             ForEach(bands, id: \.0) { band, minutes in
                 HStack(spacing: 10) {
                     Circle().fill(StressStyle.color(band)).frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(band.name).font(.subheadline)
-                        Text(StressStyle.meaning(band)).font(.caption).foregroundStyle(TetherBrand.sub)
-                    }
+                    Text(band.name).font(.subheadline)
                     Spacer()
                     Text(SleepFormat.duration(minutes: Double(minutes))).font(.subheadline.weight(.semibold)).monospacedDigit()
                 }
@@ -168,13 +166,20 @@ struct StressDetailView: View {
     // MARK: Hours
 
     private var hours: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Hour by hour").font(.headline)
-                Spacer()
-                Text("heart rate · HRV").font(.caption).foregroundStyle(TetherBrand.sub)
+        DisclosureGroup(isExpanded: $showsHours) {
+            hourRows.padding(.top, 8)
+        } label: {
+            Label { Text("Hour by hour").font(.subheadline.weight(.semibold)) } icon: {
+                Image(systemName: "list.bullet").foregroundStyle(TetherBrand.sub)
             }
-            .padding(.bottom, 8)
+            .foregroundStyle(TetherBrand.text)
+        }
+        .tint(TetherBrand.sub)
+        .card()
+    }
+
+    private var hourRows: some View {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(detail.hours.reversed()) { hour in
                 HStack(spacing: 10) {
                     Text(hourLabel(hour.startTs)).font(.subheadline).monospacedDigit()
@@ -190,7 +195,6 @@ struct StressDetailView: View {
                 if hour.id != detail.hours.first?.id { Divider().overlay(TetherBrand.cardStroke) }
             }
         }
-        .card()
     }
 
     @ViewBuilder private func bandChip(_ hour: StressDetail.Hour) -> some View {
@@ -217,10 +221,9 @@ struct StressDetailView: View {
             Divider().overlay(TetherBrand.cardStroke)
             Toggle(isOn: Binding(get: { model.collector.stressAlerts }, set: { model.collector.stressAlerts = $0 })) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Tell me when stress climbs").font(.subheadline.weight(.semibold))
-                    Text("When your HRV drops and stays down for a minute while you're at rest, your phone suggests a breather. At most every 15 minutes, never 10 PM–7 AM, and only while your phone hears the strap.")
+                    Label("Tell me when stress climbs", systemImage: "bell").font(.subheadline.weight(.semibold))
+                    Text("At most every 15 min, never at night.")
                         .font(.caption).foregroundStyle(TetherBrand.sub)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .tint(TetherBrand.ember)
@@ -250,11 +253,4 @@ enum StressStyle {
         }
     }
 
-    static func meaning(_ band: StressBand) -> String {
-        switch band {
-        case .calm: "Below your usual: relaxed, resting"
-        case .usual: "A normal hour for you"
-        case .high: "Heart rate up, HRV down"
-        }
-    }
 }

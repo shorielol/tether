@@ -19,7 +19,6 @@ struct EffortDetailView: View {
             WorkoutsCard()
             zones
             stretches
-            if detail.effortCurve.count >= 2 { effortBuild }
             if today.effort != nil, let breakdown = ScoreBreakdown.effort(bandMinutes: today.effortBandMinutes) {
                 EffortMathsCard(bandMinutes: today.effortBandMinutes, breakdown: breakdown)
             }
@@ -78,9 +77,6 @@ struct EffortDetailView: View {
             .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) }
             .frame(height: 120)
             .accessibilityLabel("Steps by hour today, \(steps.total) in all")
-            Text("From your strap's own step counter. New steps arrive each time Tether syncs the strap's history, about every 30 minutes.")
-                .font(.caption).foregroundStyle(TetherBrand.sub)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .card()
     }
@@ -183,18 +179,15 @@ struct EffortDetailView: View {
                 Text("max HR \(today.maxHR)").font(.caption).foregroundStyle(TetherBrand.sub).monospacedDigit()
             }
             ForEach(detail.zones.reversed()) { zone in
-                HStack(alignment: .top, spacing: 10) {
-                    Circle().fill(TetherBrand.zone(zone.number)).frame(width: 8, height: 8).padding(.top, 6)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Zone \(zone.number) · \(TetherBrand.zoneNames[zone.number])").font(.subheadline)
-                        Text("\(zone.lowerBPM)–\(zone.upperBPM) bpm · \(ZoneStyle.meaning(zone.number))")
-                            .font(.caption).foregroundStyle(TetherBrand.sub)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                HStack(spacing: 10) {
+                    Circle().fill(TetherBrand.zone(zone.number)).frame(width: 8, height: 8)
+                    Text(TetherBrand.zoneNames[zone.number]).font(.subheadline)
+                    Text("\(zone.lowerBPM)–\(zone.upperBPM)").font(.caption).foregroundStyle(TetherBrand.sub).monospacedDigit()
                     Spacer()
                     Text("\(zone.minutes) min").font(.subheadline.weight(.semibold)).monospacedDigit()
                 }
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Zone \(zone.number), \(TetherBrand.zoneNames[zone.number]), \(zone.lowerBPM) to \(zone.upperBPM) bpm, \(ZoneStyle.meaning(zone.number)), \(zone.minutes) minutes")
             }
         }
         .card()
@@ -239,27 +232,6 @@ struct EffortDetailView: View {
     }
 
     // MARK: Effort through the day
-
-    private var effortBuild: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("How Effort built up").font(.headline)
-            Chart(detail.effortCurve) { point in
-                AreaMark(x: .value("Time", date(point.ts)), y: .value("Effort", point.effort))
-                    .foregroundStyle(TetherBrand.ember.opacity(0.18))
-                LineMark(x: .value("Time", date(point.ts)), y: .value("Effort", point.effort))
-                    .foregroundStyle(TetherBrand.ember)
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
-                    AxisGridLine().foregroundStyle(TetherBrand.cardStroke)
-                    AxisValueLabel(format: .dateTime.hour())
-                }
-            }
-            .frame(height: 140)
-            .accessibilityLabel("Effort through the day, reaching \(today.effort.map { String(format: "%.1f", $0) } ?? "0")")
-        }
-        .card()
-    }
 
     private func date(_ ts: Int) -> Date { Date(timeIntervalSince1970: TimeInterval(ts)) }
     private func time(_ ts: Int) -> String { date(ts).formatted(date: .omitted, time: .shortened) }

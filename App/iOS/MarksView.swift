@@ -49,7 +49,7 @@ struct MarksView: View {
             Toggle(isOn: Binding(get: { model.marksNeedTwoTaps }, set: { model.marksNeedTwoTaps = $0 })) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Two double-taps make a mark").font(.subheadline.weight(.semibold))
-                    Text("Tap-tap, then tap-tap again within \(MarkFilter.pairSeconds) seconds. The strap also feels knocks and bumps as double-taps; this keeps those out. Taps while you're asleep never count, and named marks always stay.")
+                    Text("Tap-tap twice within \(MarkFilter.pairSeconds) s, so knocks don't count. Taps while asleep are ignored.")
                         .font(.caption).foregroundStyle(TetherBrand.sub)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -159,35 +159,3 @@ struct MarksView: View {
     private func signed(_ value: Int) -> String { value > 0 ? "+\(value)" : value < 0 ? "−\(-value)" : "±0" }
 }
 
-/// Today's line for marks: how many today, or how to make one.
-struct MarksRow: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        let today = model.marksToday
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Marks").font(.headline)
-                Text(today.isEmpty ? (model.marksNeedTwoTaps ? "Double-tap your strap twice to mark a moment" : "Double-tap your strap to mark a moment") : detail(today))
-                    .font(.subheadline).foregroundStyle(TetherBrand.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            if !today.isEmpty {
-                Text("\(today.count)").font(.title3.weight(.semibold)).monospacedDigit()
-            }
-        }
-        .card()
-    }
-
-    private func detail(_ marks: [Int]) -> String {
-        let names = marks.compactMap { model.label(for: $0) }
-        let unnamed = marks.count - names.count
-        let named = names.isEmpty ? "" : names.joined(separator: ", ")
-        switch (named.isEmpty, unnamed) {
-        case (true, _): return "\(marks.count == 1 ? "1 mark" : "\(marks.count) marks") today, not named yet"
-        case (false, 0): return named
-        default: return "\(named) and \(unnamed) not named"
-        }
-    }
-}

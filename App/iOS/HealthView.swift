@@ -2,72 +2,78 @@ import Charts
 import SwiftUI
 import TetherCore
 
-/// Last night's vitals against your normal, each with its week. A vital the strap hasn't sent says so.
+/// Last night's vitals in one list: icon, value, and an arrow when it's outside your normal. A row opens
+/// to its range and week. Blood oxygen isn't listed: the WHOOP 5 doesn't send it in a form we can read.
 struct HealthView: View {
     @Environment(AppModel.self) private var model
+    @State private var open: Set<String> = []
 
     var body: some View {
         let vitals = HealthVital.compute(latest: model.lastNight, history: model.nights)
         let monitor = model.healthMonitor
         TabScreen {
-            ScreenHeader(eyebrow: "Last night vs your normal", title: "Health")
-            if let monitor { EarlyWarningCard(warning: monitor.warning) }
-            if vitals.isEmpty {
-                NotYet(title: "No nights yet", detail: "Wear the strap to bed. Your vitals show here in the morning.")
-                    .card()
-            } else {
-                Text(HealthVital.summary(vitals)).font(.subheadline).foregroundStyle(TetherBrand.sub)
-                ForEach(vitals) { vital in
-                    VitalCard(vital: vital, flag: monitor?.flags.first { $0.name == vital.name })
+            ScreenHeader(eyebrow: "Last night", title: "Health")
+            if let monitor { WarningRow(warning: monitor.warning) }
+            VStack(spacing: 0) {
+                ForEach(Array(vitals.enumerated()), id: \.element.id) { index, vital in
+                    if index > 0 { Divider().overlay(TetherBrand.cardStroke) }
+                    VitalRow(vital: vital, flag: monitor?.flags.first { $0.name == vital.name },
+                             isOpen: open.contains(vital.name)) { toggle(vital.name) }
+                }
+                if let fitness = model.fitnessAge {
+                    if !vitals.isEmpty { Divider().overlay(TetherBrand.cardStroke) }
+                    FitnessRow(reading: fitness)
                 }
             }
-            PendingVital(name: "Blood oxygen", status: "not sent yet",
-                         detail: "Your strap hasn't sent blood oxygen yet. If it never does, this will say it isn't available on your strap.")
-            if let fitness = model.fitnessAge { FitnessAgeCard(reading: fitness) }
+            .card(padding: 0)
+            if vitals.isEmpty {
+                Text("Wear the strap to bed. Your vitals fill in in the morning.")
+                    .font(.footnote).foregroundStyle(TetherBrand.sub)
+            }
+        }
+        #if DEBUG
+        // `-tether.debugOpen HRV` opens a row, for screenshots without taps.
+        .onAppear { if let name = UserDefaults.standard.string(forKey: "tether.debugOpen") { open = [name] } }
+        #endif
+    }
+
+    private func toggle(_ name: String) {
+        withAnimation(.snappy(duration: 0.25)) {
+            if open.contains(name) { open.remove(name) } else { open.insert(name) }
         }
     }
 }
 
-/// The early warning: quiet when all's well, a gentle note when several signals drift together.
-private struct EarlyWarningCard: View {
+/// The early warning in one line. A short second line only when something is off.
+private struct WarningRow: View {
     let warning: HealthMonitor.Warning
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: icon).foregroundStyle(tint).font(.subheadline.weight(.semibold))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.headline)
-                Text(detail).font(.subheadline).foregroundStyle(TetherBrand.sub)
-                    .fixedSize(horizontal: false, vertical: true)
+            Image(systemName: icon).foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                if let detail { Text(detail).font(.footnote).foregroundStyle(TetherBrand.sub) }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card()
         .accessibilityElement(children: .combine)
     }
 
     private var title: String {
         switch warning {
-        case .learning: "Early warning is learning"
+        case .learning(let nights): "Early warning starts in \(nights) \(nights == 1 ? "night" : "nights")"
         case .clear: "Nothing unusual last night"
         case .mild: "A little off your normal"
-        case .raised: "A few signals are off your normal"
-        case .explained: "Off your normal, with a likely reason"
+        case .raised: "Several signals off your normal"
+        case .explained: "Off your normal, likely explained"
         }
     }
 
-    private var detail: String {
+    private var detail: String? {
         switch warning {
-        case .learning(let nights):
-            "It watches for several signals drifting together, the way they can a day or two before you feel ill. It starts once it knows your normal: \(nights) more \(nights == 1 ? "night" : "nights")."
-        case .clear:
-            "Resting heart rate, HRV, breathing and skin temperature are where they usually are for you."
-        case .mild(let signals):
-            "\(signals.joined(separator: ", ")). Probably nothing; worth seeing whether it's still there tomorrow."
-        case .raised(let signals):
-            "\(signals.joined(separator: ", ")). Take it easy and see how you feel. On-device estimate, not a diagnosis."
-        case .explained(let signals):
-            "\(signals.joined(separator: ", ")), but something else you did likely explains it."
+        case .learning, .clear: nil
+        case .mild(let signals), .explained(let signals): signals.joined(separator: ", ")
+        case .raised(let signals): signals.joined(separator: ", ") + ". Take it easy today."
         }
     }
 
@@ -88,50 +94,76 @@ private struct EarlyWarningCard: View {
     }
 }
 
-private struct VitalCard: View {
+enum VitalIcon {
+    static func name(_ vital: String) -> String {
+        switch vital {
+        case "HRV": "waveform.path.ecg"
+        case "Resting HR": "heart"
+        case "Breathing": "lungs"
+        case "Skin temp": "thermometer.medium"
+        case "Asleep": "bed.double"
+        case "Efficiency": "percent"
+        default: "circle"
+        }
+    }
+}
+
+private struct VitalRow: View {
     let vital: HealthVital
-    /// The health monitor's verdict: only an out-of-range flag turns the card to a heads-up.
+    /// The health monitor's verdict: only an out-of-range flag turns the row amber.
     let flag: HealthMonitor.Flag?
+    let isOpen: Bool
+    let toggle: () -> Void
 
     private var flagged: Bool { flag?.outOfRange == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(vital.name).font(.headline)
-                Spacer()
-                Text(verdict).font(.footnote.weight(flagged ? .semibold : .regular))
-                    .foregroundStyle(flagged ? TetherBrand.headsUp : TetherBrand.sub)
-            }
-            if let value = vital.value {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(format(value)).font(.system(.title, weight: .bold)).monospacedDigit()
-                    Text(vital.unit).font(.subheadline).foregroundStyle(TetherBrand.sub)
+            Button(action: toggle) {
+                HStack(spacing: 12) {
+                    Image(systemName: VitalIcon.name(vital.name)).frame(width: 24)
+                        .foregroundStyle(flagged ? TetherBrand.headsUp : TetherBrand.sub)
+                    Text(vital.name)
+                    Spacer()
+                    if let arrow { Image(systemName: arrow).font(.caption.weight(.bold)).foregroundStyle(flagged ? TetherBrand.headsUp : TetherBrand.sub) }
+                    Text(vital.value.map { "\(format($0)) \(vital.unit)" } ?? "–")
+                        .fontWeight(.semibold).monospacedDigit()
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(TetherBrand.sub)
+                        .rotationEffect(.degrees(isOpen ? 180 : 0))
                 }
-                RangeBar(placement: placement(value), tint: flagged ? TetherBrand.headsUp : TetherBrand.text)
+                .contentShape(.rect)
             }
-            WeekChart(vital: vital).frame(height: 64)
-            if let band = vital.band {
-                let low = format(band.low), high = format(band.high)
-                Text("Your normal: \(low == high ? low : "\(low)–\(high)") \(vital.unit)")
-                    .font(.caption).foregroundStyle(TetherBrand.sub)
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(vital.name), \(vital.value.map { "\(format($0)) \(vital.unit)" } ?? "not measured"), \(verdict)")
+            .accessibilityHint(isOpen ? "Hides the week" : "Shows the week")
+            if isOpen {
+                if let value = vital.value {
+                    RangeBar(placement: placement(value), tint: flagged ? TetherBrand.headsUp : TetherBrand.text)
+                }
+                WeekChart(vital: vital).frame(height: 64)
+                Text(normalText).font(.caption).foregroundStyle(TetherBrand.sub)
             }
         }
-        .card()
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 16).padding(.vertical, 14)
+    }
+
+    private var arrow: String? {
+        guard let value = vital.value, let band = vital.band, !band.contains(value) else { return nil }
+        return value < band.low ? "arrow.down" : "arrow.up"
     }
 
     private var verdict: String {
-        guard let value = vital.value else {
-            let everMeasured = vital.recent.contains { $0.value != nil }
-            return everMeasured ? "not measured last night" : "starts after a night's sleep"
-        }
-        if flagged {
-            return flag?.personal == true ? "outside your usual range" : "outside the typical adult range"
-        }
+        guard let value = vital.value else { return "not measured last night" }
+        if flagged { return "outside your usual range" }
         guard let band = vital.band else { return "learning your normal" }
         if band.contains(value) { return "in your normal" }
         return value < band.low ? "below your normal" : "above your normal"
+    }
+
+    private var normalText: String {
+        guard let band = vital.band else { return "Learning your normal" }
+        let low = format(band.low), high = format(band.high)
+        return "Your normal \(low == high ? low : "\(low)–\(high)") \(vital.unit)"
     }
 
     private func placement(_ value: Double) -> RangePlacement {
@@ -140,6 +172,46 @@ private struct VitalCard: View {
     }
 
     private func format(_ value: Double) -> String { String(format: "%.\(vital.decimals)f", value) }
+}
+
+/// A list row with no week to open: an icon, a name, a value or a dash, and an optional short note.
+private struct PlainRow: View {
+    let icon: String
+    let name: String
+    let value: String?
+    var note: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Image(systemName: icon).frame(width: 24).foregroundStyle(TetherBrand.sub)
+                Text(name)
+                Spacer()
+                Text(value ?? "–").fontWeight(.semibold).monospacedDigit()
+            }
+            if let note {
+                Text(note).font(.caption).foregroundStyle(TetherBrand.sub).padding(.leading, 36)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Fitness age as a row: an estimate, never a biological age.
+private struct FitnessRow: View {
+    let reading: FitnessAge.Reading
+
+    var body: some View {
+        switch reading {
+        case .tooYoung(let startsAt):
+            PlainRow(icon: "figure.run", name: "Fitness age", value: nil, note: "Starts at \(startsAt): the formula is for adults")
+        case .needsMoreDays(let have, let need):
+            PlainRow(icon: "figure.run", name: "Fitness age", value: nil, note: "\(have) of \(need) nights so far")
+        case .estimate(let years, let band, _):
+            PlainRow(icon: "figure.run", name: "Fitness age", value: "\(years)", note: "Estimate, ±\(band) years")
+        }
+    }
 }
 
 /// The last week of nights as a small line, with your normal as a band behind it.
@@ -200,49 +272,3 @@ private struct WeekChart: View {
     }
 }
 
-private struct PendingVital: View {
-    let name: String
-    let status: String
-    let detail: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(name).font(.headline)
-                Spacer()
-                Text(status).font(.footnote).foregroundStyle(TetherBrand.sub)
-            }
-            Text(detail).font(.subheadline).foregroundStyle(TetherBrand.sub)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .card()
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// Fitness age: an estimate from resting heart rate and how active the week was, never a biological age.
-private struct FitnessAgeCard: View {
-    let reading: FitnessAge.Reading
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Fitness age").font(.headline)
-            switch reading {
-            case .tooYoung(let startsAt):
-                note("The formula behind this is for adults, so it starts when you're \(startsAt). Until then your resting heart rate and Effort tell the same story on their own.")
-            case .needsMoreDays(let have, let need):
-                note("Needs resting heart rate from \(need) of the last 7 nights. You have \(have) so far.")
-            case .estimate(let years, let band, let actual):
-                Text("About \(years)").font(.title2.weight(.semibold)).monospacedDigit()
-                note("Give or take \(band) years, against your age of \(actual). From this week's resting heart rate and how many active days you had. A fitness comparison, not a biological age.")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card()
-        .accessibilityElement(children: .combine)
-    }
-
-    private func note(_ text: String) -> some View {
-        Text(text).font(.subheadline).foregroundStyle(TetherBrand.sub).fixedSize(horizontal: false, vertical: true)
-    }
-}

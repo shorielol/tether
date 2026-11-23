@@ -121,19 +121,3 @@ struct CoachView: View {
         Task { await session.ask(question, input: input) }
     }
 }
-
-struct CoachRow: View {
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Ask about your numbers").font(.headline)
-                Text("Why Charge is where it is, how your week went. Answered on this iPhone.")
-                    .font(.subheadline).foregroundStyle(TetherBrand.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            Image(systemName: "chevron.right").foregroundStyle(TetherBrand.sub)
-        }
-        .card()
-    }
-}

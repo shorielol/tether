@@ -11,7 +11,7 @@ struct AlarmCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle(isOn: isOn) {
-                Text("Silent alarm").font(.headline)
+                Label("Silent alarm", systemImage: "alarm").font(.headline)
             }
             .tint(TetherBrand.ember)
             if alarm.setting?.isOn == true {
@@ -26,7 +26,7 @@ struct AlarmCard: View {
                     }
                     .pickerStyle(.segmented)
                     if (alarm.setting?.windowMinutes ?? 0) > 0 {
-                        Text("In the \(alarm.setting?.windowMinutes ?? 0) minutes before, your strap buzzes as soon as your heart rate shows you're surfacing from deep sleep. Your phone has to be near the strap for this; otherwise it buzzes at the time you set.")
+                        Text("Buzzes early if you're surfacing from deep sleep. Needs your phone nearby.")
                             .font(.footnote).foregroundStyle(TetherBrand.sub)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -37,7 +37,7 @@ struct AlarmCard: View {
                 Button("Try again") { alarm.set(hour: setting.hour, minute: setting.minute) }
                     .buttonStyle(.bordered)
             }
-            Text("New on WHOOP 5: the strap has woken people with this, but not every time yet. Keep your phone alarm on for the first few mornings.")
+            Text("Keep a phone alarm too for the first few mornings.")
                 .font(.footnote).foregroundStyle(TetherBrand.sub)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -47,7 +47,7 @@ struct AlarmCard: View {
     @ViewBuilder private var statusLine: some View {
         switch alarm.status {
         case .off:
-            note("Your strap buzzes you awake at the time you pick, without a sound.")
+            note("Buzzes you awake, silently.")
         case .waitingForStrap:
             note("Goes to your strap when it next connects.")
         case .sending:
@@ -63,7 +63,7 @@ struct AlarmCard: View {
                 .font(.subheadline).foregroundStyle(TetherBrand.good)
                 .fixedSize(horizontal: false, vertical: true)
         case .refused:
-            Text("Your strap didn't accept the alarm, so it's off. Tether won't keep trying on its own.")
+            Text("Your strap didn't accept the alarm, so it's off.")
                 .font(.subheadline).foregroundStyle(TetherBrand.headsUp)
                 .fixedSize(horizontal: false, vertical: true)
         }
