@@ -3,7 +3,7 @@ import TetherCore
 
 /// The screens a Today card opens.
 enum TodayDetail: String, Hashable {
-    case stress, effort, recovery, sleep, marks, breathe
+    case stress, effort, recovery, sleep, marks, breathe, coach
 }
 
 struct TodayView: View {
@@ -49,6 +49,8 @@ struct TodayView: View {
             MarksView()
         case .breathe:
             BreatheView()
+        case .coach:
+            CoachView()
         }
     }
 
@@ -98,6 +100,7 @@ struct TodayView: View {
             if model.collector.isPaired {
                 DetailLink(.marks) { MarksRow() }
             }
+            DetailLink(.coach) { CoachRow() }
         }
     }
 

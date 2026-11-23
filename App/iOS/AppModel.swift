@@ -237,6 +237,15 @@ final class AppModel {
     /// Last night's vitals against your range, and the early warning.
     var healthMonitor: HealthMonitor? { HealthMonitor.check(latest: lastNight, history: nights) }
 
+    /// Your numbers for the coach: last night, the week before it, today, tonight and the journal.
+    var coachInput: Coach.Input {
+        let coach = sleepCoach
+        let journal = JournalInsights.compute(entries: journalEntries, nights: nights).filter(\.clear).map(\.sentence)
+        return Coach.Input(lastNight: lastNight, week: nights.filter { $0.day != lastNight?.day },
+                           effortToday: today?.effort, sleepNeedMin: coach?.need.totalMin,
+                           bedtimeMinute: coach?.bedtimeMinute, warning: healthMonitor?.warning, journal: journal)
+    }
+
     /// Fitness age from the last week's resting heart rate and Effort, or why it isn't shown yet.
     var fitnessAge: FitnessAge.Reading? {
         guard let profile else { return nil }

@@ -35,6 +35,7 @@ struct MainTabs: View {
         case "strap": Destination(section: .today, strap: true)
         case "marks": Destination(section: .today, path: [.marks])
         case "breathe": Destination(section: .today, path: [.stress, .breathe])
+        case "coach": Destination(section: .today, path: [.coach])
         default: nil
         }
     }
