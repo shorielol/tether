@@ -19,6 +19,7 @@ struct TrendsView: View {
             }
             .pickerStyle(.segmented)
             if model.nights.count >= 7 { WeekCard(digest: Trends.weekly(nights: model.nights, today: today)) }
+            JournalInsightsCard()
             if series.isEmpty {
                 NotYet(title: "Trends start after a few nights",
                        detail: "Charge, sleep, HRV, resting heart rate and the rest appear here once there are a couple of scored nights in this range.")

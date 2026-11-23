@@ -7,7 +7,7 @@ import GRDB
 // syncWrite/syncRead helpers (off the main thread).
 
 /// One journal answer. Natural key (deviceId, day, question).
-public struct JournalEntry: Equatable, Codable {
+public struct JournalEntry: Equatable, Codable, Sendable {  // tether: Sendable, plain values only
     public let day: String          // YYYY-MM-DD
     public let question: String
     public let answeredYes: Bool

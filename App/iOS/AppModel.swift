@@ -3,6 +3,7 @@ import Observation
 import TetherCore
 import TetherFiles
 import TetherSnapshot
+import WhoopStore
 import UIKit
 import UserNotifications
 @preconcurrency import WhoopProtocol
@@ -113,6 +114,36 @@ final class AppModel {
         if let strap { collector.pair(with: strap) }
         UserDefaults.standard.set(true, forKey: Self.onboardedKey)
         onboarded = true
+    }
+
+    // MARK: - Journal
+
+    private(set) var journalEntries: [JournalEntry] = []
+
+    private var todayKey: String { DayScorer.dayKey(dayStart: Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)) }
+
+    /// Ask in the morning once last night's sleep has ended today, until it's answered.
+    var journalDue: Bool {
+        guard collector.isPaired, !journalEntries.contains(where: { $0.day == todayKey }),
+              let end = lastNight?.sleepEnd else { return false }
+        return Calendar.current.isDateInToday(Date(timeIntervalSince1970: TimeInterval(end)))
+    }
+
+    func saveJournal(yes: Set<JournalQuestion>) {
+        let day = todayKey
+        journalEntries = journalEntries.filter { $0.day != day } + JournalDay.entries(day: day, yes: yes)
+        #if DEBUG
+        if DebugFixture.isOn { return }
+        #endif
+        Task { try? await sink.saveJournal(day: day, yes: yes) }
+    }
+
+    func refreshJournal() async {
+        #if DEBUG
+        if DebugFixture.isOn { return }
+        #endif
+        let from = DayScorer.dayKey(dayStart: Int(Date.now.addingTimeInterval(-Double(Trends.longestRange) * 86_400).timeIntervalSince1970))
+        if let read = try? await sink.journal(from: from, to: todayKey), read != journalEntries { journalEntries = read }
     }
 
     // MARK: - Marks
@@ -338,6 +369,7 @@ final class AppModel {
                 await self?.refreshToday()
                 await self?.scoreNights()
                 await self?.refreshMarks()
+                await self?.refreshJournal()
                 await self?.scheduleBedtimeReminder()
                 await self?.syncFolder()
                 try? await Task.sleep(for: .seconds(30))

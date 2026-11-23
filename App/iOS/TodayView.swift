@@ -84,6 +84,7 @@ struct TodayView: View {
                            : "Tap the strap button at the top to pair your strap and start your history.")
                     .card()
             }
+            if model.journalDue { JournalCard() }
             if let forecast = model.energyForecast {
                 EnergyCard(forecast: forecast, now: Int(Date.now.timeIntervalSince1970))
             }
