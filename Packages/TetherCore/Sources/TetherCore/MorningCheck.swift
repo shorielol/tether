@@ -25,7 +25,8 @@ public enum MorningCheck {
 
         let snapshot = MorningSnapshot(wakeDay: wakeDay, savedAt: Int(now.timeIntervalSince1970),
                                        sleepMin: night.totalSleepMin, rest: night.rest, charge: night.charge,
-                                       baselineNights: baselineNights, restingHR: night.restingHR)
+                                       baselineNights: baselineNights, restingHR: night.restingHR,
+                                       skinTempDevC: night.skinTempDevC)
         if let published, sameNumbers(published, snapshot) { return .skip }
         return .publish(snapshot)
     }
@@ -33,5 +34,6 @@ public enum MorningCheck {
     private static func sameNumbers(_ a: MorningSnapshot, _ b: MorningSnapshot) -> Bool {
         a.wakeDay == b.wakeDay && a.sleepMin == b.sleepMin && a.rest == b.rest && a.charge == b.charge
             && a.baselineNights == b.baselineNights && a.restingHR == b.restingHR
+            && a.skinTempDevC == b.skinTempDevC
     }
 }

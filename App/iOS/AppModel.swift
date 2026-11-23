@@ -379,6 +379,8 @@ final class AppModel {
                 await self?.refreshMarks()
                 await self?.refreshJournal()
                 await self?.scheduleBedtimeReminder()
+                self?.publishTonight()
+                await self?.scheduleGapAlert()
                 await self?.syncFolder()
                 try? await Task.sleep(for: .seconds(30))
             }
@@ -513,6 +515,7 @@ final class AppModel {
         morningLoop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshRecordingCard(canStart: false)
+                await self?.scheduleGapAlert()
                 await self?.morningPass()
                 try? await Task.sleep(for: Self.morningTick)
             }
@@ -541,6 +544,58 @@ final class AppModel {
         let baselineNights = (try? await sink.baselineNightCount()) ?? scoredNightCount
         publishMorning(night: night, baselineNights: baselineNights)
         await notifyHealth(after: night)
+    }
+
+    private static let gapAlertsKey = "tether.gapAlerts"
+    private static let gapAlertId = "tether.gap"
+    @ObservationIgnored private var gapScheduledFor: Int?
+
+    /// On unless turned off: a notification if the strap hasn't reached the phone for two hours.
+    var gapAlerts: Bool = UserDefaults.standard.object(forKey: AppModel.gapAlertsKey) as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(gapAlerts, forKey: Self.gapAlertsKey)
+            Task { await scheduleGapAlert() }
+        }
+    }
+
+    /// Pushes the out-of-touch notification two hours past the latest sample. If the strap goes quiet the
+    /// app may be suspended, so the notification is already waiting and goes off without it.
+    func scheduleGapAlert() async {
+        let center = UNUserNotificationCenter.current()
+        switch GapAlert.plan(lastSampleAt: collector.lastSampleAt, scheduledFor: gapScheduledFor, enabled: gapAlerts) {
+        case .keep:
+            return
+        case .cancel:
+            center.removePendingNotificationRequests(withIdentifiers: [Self.gapAlertId])
+            gapScheduledFor = nil
+        case .schedule(let fireAt):
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true,
+                  let last = collector.lastSampleAt else { return }
+            let since = Date(timeIntervalSince1970: TimeInterval(last)).formatted(date: .omitted, time: .shortened)
+            let content = UNMutableNotificationContent()
+            content.title = "Tether hasn't heard from your strap since \(since)"
+            content.body = "Bring your phone near it. The strap keeps the missed hours and sends them across when it's back."
+            content.userInfo = ["open": "tether://strap"]
+            let wait = max(60, TimeInterval(fireAt) - Date().timeIntervalSince1970)
+            center.removePendingNotificationRequests(withIdentifiers: [Self.gapAlertId])
+            try? await center.add(UNNotificationRequest(identifier: Self.gapAlertId, content: content,
+                                                        trigger: UNTimeIntervalNotificationTrigger(timeInterval: wait, repeats: false)))
+            gapScheduledFor = fireAt
+        }
+    }
+
+    /// Tonight's need, bedtime and alarm for the lock-screen widgets; reloads them only when one moved.
+    private func publishTonight() {
+        guard let store = SnapshotStore.shared(), let coach = sleepCoach else { return }
+        let alarm = collector.alarm
+        let on = alarm.setting?.isOn == true
+        var confirmed = false
+        if case .set = alarm.status { confirmed = true }
+        let tonight = TonightSnapshot(savedAt: Int(Date().timeIntervalSince1970), needMin: coach.need.totalMin,
+                                      bedtimeMinute: coach.bedtimeMinute,
+                                      alarmMinute: on ? (alarm.setting.map { $0.hour * 60 + $0.minute }) : nil,
+                                      alarmConfirmed: on && confirmed)
+        if (try? store.writeTonight(tonight)) == true { WidgetCenter.shared.reloadAllTimelines() }
     }
 
     private func publishMorning(night: NightSummary?, baselineNights: Int) {
@@ -595,8 +650,11 @@ final class AppModel {
     /// `-tether.debugMorning YES` fills the widgets with fixture numbers, to check them without a strap.
     private func publishDebugMorning() {
         let snapshot = MorningSnapshot(wakeDay: WakeDay.key(for: .now), savedAt: Int(Date().timeIntervalSince1970),
-                                       sleepMin: 437, rest: 81, charge: 67, baselineNights: 6, restingHR: 52)
+                                       sleepMin: 437, rest: 81, charge: 67, baselineNights: 6, restingHR: 52,
+                                       skinTempDevC: 0.3)
         try? SnapshotStore.shared()?.write(snapshot)
+        try? SnapshotStore.shared()?.writeTonight(TonightSnapshot(savedAt: 0, needMin: 560, bedtimeMinute: 22 * 60 + 15,
+                                                                  alarmMinute: 7 * 60, alarmConfirmed: true))
         WidgetCenter.shared.reloadAllTimelines()
     }
     #endif

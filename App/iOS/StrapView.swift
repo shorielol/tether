@@ -15,6 +15,7 @@ struct StrapView: View {
                 LiveCard()
                 AlarmCard(alarm: model.collector.alarm)
                 HistoryCard()
+                GapAlertToggle()
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     NotYet(title: "No strap paired",
@@ -285,6 +286,24 @@ private struct FilesCard: View {
             Button(model.folderName == nil ? "Choose folder" : "Change folder") { picking = true }
                 .fontWeight(.semibold)
         }
+        .card()
+    }
+}
+
+/// The out-of-touch notification's switch.
+private struct GapAlertToggle: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { model.gapAlerts }, set: { model.gapAlerts = $0 })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tell me when the strap is out of touch").font(.subheadline.weight(.semibold))
+                Text("If your phone hasn't heard the strap for two hours, you get one notification. Never between 11 PM and 7 AM.")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(TetherBrand.ember)
         .card()
     }
 }

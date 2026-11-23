@@ -10,6 +10,9 @@ struct TetherWidgetBundle: WidgetBundle {
         ChargeWidget()
         SleepWidget()
         RestingHRWidget()
+        SkinTempWidget()
+        TonightWidget()
+        AlarmWidget()
         RecordingLiveActivity()
     }
 }
