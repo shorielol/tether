@@ -237,6 +237,14 @@ final class AppModel {
     /// Last night's vitals against your range, and the early warning.
     var healthMonitor: HealthMonitor? { HealthMonitor.check(latest: lastNight, history: nights) }
 
+    /// Fitness age from the last week's resting heart rate and Effort, or why it isn't shown yet.
+    var fitnessAge: FitnessAge.Reading? {
+        guard let profile else { return nil }
+        var all = nights
+        if let lastNight, !all.contains(where: { $0.day == lastNight.day }) { all.append(lastNight) }
+        return FitnessAge.compute(nights: all, age: profile.age, sex: profile.sex.rawValue)
+    }
+
     private static let healthNotifiedKey = "tether.health.lastNotifiedDay"
 
     /// The morning heads-up: only when the early warning is raised, at most once a day.

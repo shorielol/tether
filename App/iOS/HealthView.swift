@@ -23,6 +23,7 @@ struct HealthView: View {
             }
             PendingVital(name: "Blood oxygen", status: "not sent yet",
                          detail: "Your strap hasn't sent blood oxygen yet. If it never does, this will say it isn't available on your strap.")
+            if let fitness = model.fitnessAge { FitnessAgeCard(reading: fitness) }
         }
     }
 }
@@ -216,5 +217,32 @@ private struct PendingVital: View {
         }
         .card()
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Fitness age: an estimate from resting heart rate and how active the week was, never a biological age.
+private struct FitnessAgeCard: View {
+    let reading: FitnessAge.Reading
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Fitness age").font(.headline)
+            switch reading {
+            case .tooYoung(let startsAt):
+                note("The formula behind this is for adults, so it starts when you're \(startsAt). Until then your resting heart rate and Effort tell the same story on their own.")
+            case .needsMoreDays(let have, let need):
+                note("Needs resting heart rate from \(need) of the last 7 nights. You have \(have) so far.")
+            case .estimate(let years, let band, let actual):
+                Text("About \(years)").font(.title2.weight(.semibold)).monospacedDigit()
+                note("Give or take \(band) years, against your age of \(actual). From this week's resting heart rate and how many active days you had. A fitness comparison, not a biological age.")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+        .accessibilityElement(children: .combine)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(.subheadline).foregroundStyle(TetherBrand.sub).fixedSize(horizontal: false, vertical: true)
     }
 }
