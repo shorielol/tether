@@ -3,7 +3,7 @@ import SwiftUI
 import TetherCore
 
 /// Last night's vitals in one list: icon, value, and an arrow when it's outside your normal. A row opens
-/// to its range and week. Blood oxygen isn't listed: the WHOOP 5 doesn't send it in a form we can read.
+/// to its range and week. Blood oxygen is the strap's own nightly %, shown as experimental.
 struct HealthView: View {
     @Environment(AppModel.self) private var model
     @State private var open: Set<String> = []
@@ -20,8 +20,13 @@ struct HealthView: View {
                     VitalRow(vital: vital, flag: monitor?.flags.first { $0.name == vital.name },
                              isOpen: open.contains(vital.name)) { toggle(vital.name) }
                 }
-                if let fitness = model.fitnessAge {
+                if let latest = model.spo2Nights.last {
                     if !vitals.isEmpty { Divider().overlay(TetherBrand.cardStroke) }
+                    SpO2Row(latest: latest, week: Array(model.spo2Nights.suffix(7)),
+                            isOpen: open.contains("Blood oxygen")) { toggle("Blood oxygen") }
+                }
+                if let fitness = model.fitnessAge {
+                    if !vitals.isEmpty || !model.spo2Nights.isEmpty { Divider().overlay(TetherBrand.cardStroke) }
                     FitnessRow(reading: fitness)
                 }
             }
@@ -272,3 +277,61 @@ private struct WeekChart: View {
     }
 }
 
+
+/// Blood oxygen from the strap's own nightly reading. Experimental: not checked against a medical device,
+/// and nothing else in Tether uses it.
+private struct SpO2Row: View {
+    let latest: NightSpO2
+    let week: [NightSpO2]
+    let isOpen: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: toggle) {
+                HStack(spacing: 12) {
+                    Image(systemName: "drop").frame(width: 24).foregroundStyle(TetherBrand.sub)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Blood oxygen")
+                        Text("Experimental").font(.caption2).foregroundStyle(TetherBrand.sub)
+                    }
+                    Spacer()
+                    Text("\(latest.median)%").fontWeight(.semibold).monospacedDigit()
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(TetherBrand.sub)
+                        .rotationEffect(.degrees(isOpen ? 180 : 0))
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Blood oxygen, experimental, \(latest.median) percent")
+            .accessibilityHint(isOpen ? "Hides the week" : "Shows the week")
+            if isOpen {
+                HStack(spacing: 24) {
+                    figure("Lowest", "\(latest.low)%")
+                    figure("Below 90%", "\(latest.minutesBelow90) min")
+                }
+                if week.count >= 2 {
+                    Chart(week) { night in
+                        LineMark(x: .value("Night", String(night.day.suffix(2))), y: .value("Blood oxygen", night.median))
+                            .foregroundStyle(Color(white: 0.8))
+                        PointMark(x: .value("Night", String(night.day.suffix(2))), y: .value("Blood oxygen", night.median))
+                            .foregroundStyle(Color(white: 0.8)).symbolSize(24)
+                    }
+                    .chartYScale(domain: 88...100)
+                    .chartYAxis { AxisMarks(values: [90, 95, 100]) }
+                    .frame(height: 64)
+                }
+                Text("Your strap's own reading. Not checked against a medical device.")
+                    .font(.caption).foregroundStyle(TetherBrand.sub)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 14)
+    }
+
+    private func figure(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.caption).foregroundStyle(TetherBrand.sub)
+            Text(value).font(.subheadline.weight(.semibold)).monospacedDigit()
+        }
+    }
+}

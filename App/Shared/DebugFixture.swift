@@ -109,6 +109,16 @@ enum DebugFixture {
         let window: MarkWindow?
     }
 
+    /// A week of blood oxygen, 94–96%, with one short dip.
+    static func spo2Nights() -> [NightSpO2] {
+        let medians = [95, 96, 95, 94, 95, 96, 95], lows = [93, 94, 93, 89, 93, 94, 93]
+        return (0..<7).map { back in
+            let day = Calendar.current.date(byAdding: .day, value: back - 6, to: .now) ?? .now
+            return NightSpO2(day: day.formatted(.iso8601.year().month().day()), median: medians[back], low: lows[back],
+                             minutesBelow90: back == 3 ? 3 : 0, readings: 410)
+        }
+    }
+
     /// Four mornings of coffee before today, coffee this morning, and an unnamed mark this afternoon.
     static func marks() -> [FixtureMark] {
         let today = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)

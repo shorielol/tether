@@ -41,6 +41,8 @@ final class AppModel {
     @ObservationIgnored private var todayLoop: Task<Void, Never>?
     /// Scored nights, oldest first (last 30 days).
     private(set) var nights: [NightSummary] = []
+    /// Blood oxygen per night from the strap's own reading, kept after the raw records are pruned.
+    private(set) var spo2Nights: [NightSpO2] = NightSpO2.load()
     /// The most recent scoring of today's night, which also carries Charge drivers.
     private(set) var latestNight: NightSummary?
     private(set) var scoredNightCount = 0
@@ -246,6 +248,27 @@ final class AppModel {
                            bedtimeMinute: coach?.bedtimeMinute, warning: healthMonitor?.warning, journal: journal)
     }
 
+    /// Scores blood oxygen for the last week's nights that don't have it yet, and rescores the latest one in
+    /// case the strap's history has filled in more of it since.
+    func refreshSpO2() async {
+        var all = nights
+        if let latestNight, !all.contains(where: { $0.day == latestNight.day }) { all.append(latestNight) }
+        let saved = Set(spo2Nights.map(\.day))
+        let latestDay = all.compactMap { $0.sleepEnd == nil ? nil : $0.day }.max()
+        var found: [NightSpO2] = []
+        for night in all.suffix(7) {
+            guard let start = night.sleepStart, let end = night.sleepEnd,
+                  !saved.contains(night.day) || night.day == latestDay,
+                  let readings = try? await sink.spo2Readings(from: start, to: end),
+                  let reading = NightSpO2.compute(day: night.day, readings: readings, sleepStart: start, sleepEnd: end)
+            else { continue }
+            found.append(reading)
+        }
+        guard !found.isEmpty else { return }
+        NightSpO2.save(found)
+        spo2Nights = NightSpO2.load()
+    }
+
     /// Fitness age from the last week's resting heart rate and Effort, or why it isn't shown yet.
     var fitnessAge: FitnessAge.Reading? {
         guard let profile else { return nil }
@@ -366,6 +389,7 @@ final class AppModel {
             latestNight = nights.last
             scoredNightCount = nights.count
             steps = DebugFixture.steps()
+            spo2Nights = DebugFixture.spo2Nights()
             let fixtureMarks = DebugFixture.marks()
             marks = fixtureMarks.map(\.ts)
             markWindows = Dictionary(uniqueKeysWithValues: fixtureMarks.compactMap { mark in mark.window.map { (mark.ts, $0) } })
@@ -387,6 +411,7 @@ final class AppModel {
                 await self?.scoreNights()
                 await self?.refreshMarks()
                 await self?.refreshJournal()
+                await self?.refreshSpO2()
                 await self?.scheduleBedtimeReminder()
                 self?.publishPlan()
                 await self?.scheduleGapAlert()
