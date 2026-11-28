@@ -23,6 +23,25 @@ public enum StrapHistoryOutcome: Equatable, Sendable {
     case saveFailed
 }
 
+/// What one sync fetched and where its time went, so slow syncs can be told apart: time spent decoding
+/// and saving (the strap waits for each acknowledgement) against time spent waiting on the strap.
+public struct StrapSyncRecord: Codable, Equatable, Sendable {
+    public enum Outcome: String, Codable, Sendable { case caughtUp, timedOut, saveFailed }
+
+    /// When the sync began (unix seconds).
+    public let startedAt: Int
+    /// From the request to the last frame handled. A sync that timed out also sat idle a minute after this.
+    public let seconds: Double
+    /// Decoding and saving chunks, while the strap waited to be acknowledged.
+    public let savingSeconds: Double
+    public let chunks: Int
+    public let rows: Int
+    public let outcome: Outcome
+
+    /// The rest: the strap sending, and Bluetooth carrying it.
+    public var waitingSeconds: Double { max(0, seconds - savingSeconds) }
+}
+
 /// One history sync with a WHOOP 5 strap: ask for the stored history, then for every chunk decode
 /// it, drop anything from before this phone paired, save it, and only then acknowledge it, which
 /// lets the strap delete it. Never acknowledges a chunk that wasn't saved.
@@ -41,6 +60,12 @@ public final class StrapHistorySession {
     public var onFinish: ((StrapHistoryOutcome) -> Void)?
     public private(set) var isRunning = false
     public private(set) var rowsSaved = 0
+    public private(set) var chunksSaved = 0
+    private let clock = ContinuousClock()
+    private var startedAt = 0
+    private var began = ContinuousClock.now
+    private var lastActivity = ContinuousClock.now
+    private var saving: Duration = .zero
 
     private let cutoff: OwnershipCutoff
     private let write: ([UInt8]) -> Void
@@ -70,8 +95,29 @@ public final class StrapHistorySession {
     public func start() {
         isRunning = true
         rowsSaved = 0
+        chunksSaved = 0
         requests = 0
+        startedAt = now()
+        began = clock.now
+        lastActivity = began
+        saving = .zero
         request()
+    }
+
+    /// This sync so far, as it would be logged if it ended with `outcome`.
+    public func record(_ outcome: StrapHistoryOutcome) -> StrapSyncRecord {
+        let kind: StrapSyncRecord.Outcome = switch outcome {
+        case .caughtUp: .caughtUp
+        case .timedOut: .timedOut
+        case .saveFailed: .saveFailed
+        }
+        return StrapSyncRecord(startedAt: startedAt, seconds: Self.seconds(lastActivity - began),
+                               savingSeconds: Self.seconds(saving), chunks: chunksSaved, rows: rowsSaved,
+                               outcome: kind)
+    }
+
+    private static func seconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
 
     /// Feed every complete frame from the strap's data characteristics. Live frames are ignored.
@@ -116,6 +162,7 @@ public final class StrapHistorySession {
     }
 
     private func handle(_ frame: [UInt8]) async {
+        lastActivity = clock.now
         switch classify(frame) {
         case .start:
             chunk.removeAll()
@@ -138,6 +185,11 @@ public final class StrapHistorySession {
     private func finishChunk(endFrame: [UInt8]) async {
         guard endFrame.count >= Self.endDataRange.upperBound else { return }
         let endData = Array(endFrame[Self.endDataRange])
+        let work = clock.now
+        defer {
+            saving += clock.now - work
+            lastActivity = clock.now
+        }
         let frames = chunk
         chunk.removeAll()
         // A WHOOP 5 record carries real unix time, so the clock reference is identity.
@@ -151,6 +203,7 @@ public final class StrapHistorySession {
             return
         }
         guard isRunning else { return }
+        chunksSaved += 1
         chunksSinceRequest += 1
         write(whoop5HistoricalAckFrame(endData: endData, seq: nextSeq()))
     }

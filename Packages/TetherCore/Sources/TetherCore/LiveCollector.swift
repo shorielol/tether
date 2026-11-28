@@ -115,6 +115,8 @@ public final class LiveCollector {
     /// launches. Nights from that day on get scored again so minutes the phone missed count.
     public private(set) var historyRescoreFrom: Int?
     public private(set) var lastHistoryOutcome: StrapHistoryOutcome?
+    /// The latest syncs, oldest first: what each fetched and how long it took. Kept across launches.
+    public private(set) var syncLog: [StrapSyncRecord] = []
     /// Called when a history sync ends, so the app can rescore the days it filled in.
     @ObservationIgnored public var onHistorySynced: ((StrapHistoryOutcome) -> Void)?
     /// A double-tap on the strap: when it was tapped, and whether it's fresh enough to ask about now.
@@ -144,12 +146,17 @@ public final class LiveCollector {
     private static let lastHistorySyncKey = "tether.history.lastSync"
     private static let historyRescoreKey = "tether.history.rescoreFrom"
     /// A ready data link syncs on its own when the last sync is at least this old.
-    public static let historySyncInterval = 30 * 60
+    /// While connected, history is fetched this often, so there's little left when the app opens.
+    public static let historySyncInterval = 5 * 60
+    /// How many recent syncs the Strap screen can show.
+    public static let syncLogLimit = 10
+    private static let syncLogKey = "tether.history.log"
     /// Opening the app syncs unless the last sync is younger than this, so flicking between apps
     /// doesn't re-read the strap.
     public static let openSyncInterval = 2 * 60
     /// While the link stays up, how often to check whether a sync is due.
-    static let heartbeatSeconds = 5 * 60
+    /// Checked every minute, so a five-minute sync interval really means five minutes.
+    static let heartbeatSeconds = 60
 
     public init(source: any HeartDataSource, sink: any SampleSink, defaults: UserDefaults = .standard,
                 now: @escaping () -> Int = { Int(Date().timeIntervalSince1970) }) {
@@ -170,6 +177,10 @@ public final class LiveCollector {
         }
         if defaults.object(forKey: Self.historyRescoreKey) != nil {
             historyRescoreFrom = defaults.integer(forKey: Self.historyRescoreKey)
+        }
+        if let data = defaults.data(forKey: Self.syncLogKey),
+           let log = try? JSONDecoder().decode([StrapSyncRecord].self, from: data) {
+            syncLog = log
         }
         if defaults.object(forKey: Self.lastHistorySyncKey) != nil {
             lastHistorySync = defaults.integer(forKey: Self.lastHistorySyncKey)
@@ -286,6 +297,7 @@ public final class LiveCollector {
     private func finishHistory(_ outcome: StrapHistoryOutcome) {
         historyIdle?.cancel()
         historyIdle = nil
+        if let session = history { logSync(session.record(outcome)) }
         history = nil
         isSyncingHistory = false
         lastHistoryOutcome = outcome
@@ -295,6 +307,11 @@ public final class LiveCollector {
             defaults.set(ended, forKey: Self.lastHistorySyncKey)
         }
         onHistorySynced?(outcome)
+    }
+
+    private func logSync(_ record: StrapSyncRecord) {
+        syncLog = Array((syncLog + [record]).suffix(Self.syncLogLimit))
+        if let data = try? JSONEncoder().encode(syncLog) { defaults.set(data, forKey: Self.syncLogKey) }
     }
 
     public var isPaired: Bool { pairedAt != nil }

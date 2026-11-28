@@ -28,7 +28,7 @@ Then open Tether, pick your strap and accept the pairing prompt. If the strap is
 
 ## What it does
 
-- Syncs the strap's stored history (heart rate, beat-to-beat intervals, skin temperature, motion, steps and strap taps) when you open the app and about every 30 minutes while the phone is near the strap. Live heart rate comes over the same link.
+- Syncs the strap's stored history (heart rate, beat-to-beat intervals, skin temperature, motion, steps and strap taps) when you open the app and every 5 minutes while the phone is near the strap, including with Tether in the background. Live heart rate comes over the same link.
 - **Charge**, 0 to 100%: last night's HRV, resting heart rate, sleep, breathing rate and skin temperature against your own normal, which it learns over your first nights.
 - **Effort**, 0 to 100: time spent in your heart-rate zones through the day, with a target band set by that morning's Charge.
 - **Sleep**: when you fell asleep and woke, stages estimated from heart rate and movement, how much you need tonight and when to be in bed.

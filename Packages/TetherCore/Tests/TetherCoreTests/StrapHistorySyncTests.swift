@@ -134,8 +134,9 @@ struct StrapHistorySyncTests {
         #expect(source.historyRequests == 2)
     }
 
-    /// While the strap stays connected, history keeps coming without pressing Sync now.
-    @Test func whileConnectedASyncStartsOnItsOwnOnceTheLastIsHalfAnHourOld() {
+    /// While the strap stays connected, history keeps coming in small pieces, so opening the app has
+    /// little left to fetch.
+    @Test func whileConnectedASyncStartsOnItsOwnEveryFiveMinutes() {
         final class Clock { var now = 0 }
         let clock = Clock()
         clock.now = now
@@ -147,13 +148,44 @@ struct StrapHistorySyncTests {
         source.send(.dataLink(.ready))
         collector.historyWentQuiet()
         #expect(source.historyRequests == 1)
-        clock.now += 10 * 60
+        clock.now += 3 * 60
         collector.historyHeartbeat()
-        #expect(source.historyRequests == 1, "ten minutes on, nothing new is asked")
-        clock.now += LiveCollector.historySyncInterval
+        #expect(source.historyRequests == 1, "three minutes on, nothing new is asked")
+        clock.now += 2 * 60
         collector.historyHeartbeat()
         #expect(source.historyRequests == 2)
-        #expect(LiveCollector.historySyncInterval == 30 * 60)
+        #expect(LiveCollector.historySyncInterval == 5 * 60)
+        #expect(LiveCollector.heartbeatSeconds == 60, "checked every minute, so five minutes means five")
+    }
+
+    @Test func eachSyncLeavesARecordOfWhatItFetchedAndHowLongItTook() async {
+        let source = FakeDataLinkSource()
+        let defaults = makeDefaults()
+        let collector = pairedCollector(source, FakeSink(), defaults: defaults)
+        source.send(.dataLink(.ready))
+        await collector.receiveStrapFrames([HistoryFrames.start, HistoryFrames.record, HistoryFrames.end])
+        collector.historyWentQuiet()
+        let record = try? #require(collector.syncLog.last)
+        #expect(record?.chunks == 1)
+        #expect((record?.rows ?? 0) >= 1)
+        #expect(record?.outcome == .timedOut)
+        #expect(record?.startedAt == now)
+        #expect((record?.seconds ?? -1) >= 0)
+        #expect((record?.savingSeconds ?? -1) >= 0)
+        let relaunched = LiveCollector(source: FakeDataLinkSource(), sink: FakeSink(), defaults: defaults, now: { now })
+        #expect(relaunched.syncLog == collector.syncLog)
+    }
+
+    @Test func theSyncRecordKeepsOnlyTheLatestFew() {
+        let source = FakeDataLinkSource()
+        let collector = pairedCollector(source, FakeSink(), defaults: makeDefaults())
+        source.send(.dataLink(.ready))
+        for _ in 0..<(LiveCollector.syncLogLimit + 3) {
+            collector.historyWentQuiet()
+            collector.syncHistoryNow()
+        }
+        collector.historyWentQuiet()
+        #expect(collector.syncLog.count == LiveCollector.syncLogLimit)
     }
 
     /// A collector that last synced `minutesAgo` before its clock, with the link down.
@@ -174,9 +206,9 @@ struct StrapHistorySyncTests {
 
     @Test func openingTheAppSyncsEvenWhenTheLastSyncWasRecent() {
         let source = FakeDataLinkSource()
-        let collector = syncedEarlier(source, minutesAgo: 10)
+        let collector = syncedEarlier(source, minutesAgo: 3)
         source.send(.dataLink(.ready))
-        #expect(source.historyRequests == 1, "ten minutes on, the link coming back alone asks nothing")
+        #expect(source.historyRequests == 1, "three minutes on, the link coming back alone asks nothing")
         collector.appOpened()
         #expect(source.historyRequests == 2)
         #expect(collector.isSyncingHistory)

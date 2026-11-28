@@ -117,7 +117,7 @@ private struct LiveCard: View {
 }
 
 /// The strap's memory: skin temperature, motion and the minutes the phone missed. Synced on its own
-/// every few hours and each morning; this card says where it stands and can start one now.
+/// every 5 minutes while connected; this card says where it stands, lists recent syncs and can start one.
 private struct HistoryCard: View {
     @Environment(AppModel.self) private var model
 
@@ -140,6 +140,7 @@ private struct HistoryCard: View {
                 Button("Sync now") { collector.syncHistoryNow() }
                     .buttonStyle(.bordered)
             }
+            if !collector.syncLog.isEmpty { SyncLogList(log: collector.syncLog) }
             if case .declined(let reason) = collector.dataLink {
                 Text("iOS said: \(reason)").font(.footnote).foregroundStyle(TetherBrand.sub)
                     .fixedSize(horizontal: false, vertical: true)
@@ -305,5 +306,53 @@ private struct GapAlertToggle: View {
         }
         .tint(TetherBrand.ember)
         .card()
+    }
+}
+
+/// The latest syncs, newest first: what each fetched, and whether the time went on saving (the app)
+/// or on waiting for the strap and Bluetooth.
+private struct SyncLogList: View {
+    let log: [StrapSyncRecord]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Recent syncs")
+            ForEach(Array(log.suffix(5).reversed().enumerated()), id: \.offset) { _, record in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(Date(timeIntervalSince1970: TimeInterval(record.startedAt))
+                            .formatted(date: .omitted, time: .shortened))
+                        Spacer()
+                        Text(Self.duration(record.seconds)).monospacedDigit()
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    Text(detail(record)).font(.caption).foregroundStyle(TetherBrand.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func detail(_ record: StrapSyncRecord) -> String {
+        let fetched = record.chunks == 0 ? "Nothing new"
+            : "\(record.chunks) \(record.chunks == 1 ? "chunk" : "chunks"), \(record.rows.formatted()) readings"
+        let split = record.chunks == 0 ? ""
+            : " · saving \(Self.duration(record.savingSeconds)), strap \(Self.duration(record.waitingSeconds))"
+        let end = switch record.outcome {
+        case .caughtUp: ""
+        case .timedOut: " · then waited a minute for the strap to finish"
+        case .saveFailed: " · couldn't save, the strap kept it"
+        }
+        return fetched + split + end
+    }
+
+    /// "850 ms", "12 s" or "2 m 05 s".
+    static func duration(_ seconds: Double) -> String {
+        if seconds < 1 { return "\(Int((seconds * 1_000).rounded())) ms" }
+        if seconds < 60 { return "\(Int(seconds.rounded())) s" }
+        let whole = Int(seconds.rounded())
+        return String(format: "%d m %02d s", whole / 60, whole % 60)
     }
 }
