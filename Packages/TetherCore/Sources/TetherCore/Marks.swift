@@ -46,6 +46,22 @@ public final class MarkLabels: @unchecked Sendable {
         all = labels
     }
 
+    /// Removes names inside `range` that no tap stands behind (a name is only ever given to a tap), and
+    /// says how many went. Names outside the range are left, since their taps weren't looked at.
+    @discardableResult
+    public func removeOrphans(taps: [Int], in range: ClosedRange<Int>) -> Int {
+        let tapped = Set(taps)
+        var labels = all
+        let orphans = labels.keys.filter { key in
+            guard let ts = Int(key) else { return false }
+            return range.contains(ts) && !tapped.contains(ts)
+        }
+        guard !orphans.isEmpty else { return 0 }
+        for key in orphans { labels[key] = nil }
+        all = labels
+        return orphans.count
+    }
+
     private static let deletedKey = "tether.marks.deleted"
 
     private var deleted: Set<Int> {

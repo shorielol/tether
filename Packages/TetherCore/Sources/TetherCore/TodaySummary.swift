@@ -113,7 +113,10 @@ public enum DayLine {
     }
 
     private static func learning(nightsUntilCharge: Int, sleptMinutes: Double?) -> String {
-        guard let sleptMinutes else { return "Wear the strap tonight. Your first night shows here in the morning." }
+        guard let sleptMinutes else {
+            if nightsUntilCharge == 0 { return "No sleep found last night, so there's no Charge today." }
+            return "Wear the strap tonight. Your first night shows here in the morning."
+        }
         let slept = "You slept \(duration(sleptMinutes))."
         switch nightsUntilCharge {
         case 0: return slept

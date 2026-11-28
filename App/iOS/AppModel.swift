@@ -150,7 +150,19 @@ final class AppModel {
 
     // MARK: - Marks
 
-    let markLabels = MarkLabels()
+    let markLabels = MarkLabels(defaults: AppModel.labelDefaults)
+
+    /// Where mark names live. Screenshot fixtures get their own store, so their sample names never
+    /// reach the real one (they once did, as five "Coffee" names with no tap behind them).
+    private static var labelDefaults: UserDefaults {
+        #if DEBUG
+        if DebugFixture.isOn, let fixture = UserDefaults(suiteName: "tether.fixture.labels") { return fixture }
+        #endif
+        return .standard
+    }
+
+    /// Set once the one-time sweep of names with no tap behind them has run.
+    private static let orphanSweepKey = "tether.marks.orphansSwept"
     @ObservationIgnored let markNotifier = MarkNotifier()
     /// Taps on the strap in the last `marksLookback`, oldest first.
     var marks: [Int] = []
@@ -351,6 +363,10 @@ final class AppModel {
             return start...end
         }
         storedTaps = taps
+        if !UserDefaults.standard.bool(forKey: Self.orphanSweepKey) {
+            markLabels.removeOrphans(taps: taps, in: max(pairedAt, now - Self.marksLookback)...now)
+            UserDefaults.standard.set(true, forKey: Self.orphanSweepKey)
+        }
         let found = markLabels.visible(MarkFilter.marks(taps: taps, twoTaps: markLabels.needsTwoTaps,
                                                         named: markLabels.named, asleep: asleep))
         if found != marks { marks = found }
@@ -405,6 +421,8 @@ final class AppModel {
         todayLoop?.cancel()
         lastScoredAt = nil
         todayLoop = Task { [weak self] in
+            // The stored nights first: a quick read, so Today doesn't say "Learning" while scoring runs.
+            await self?.loadStoredNights()
             while !Task.isCancelled {
                 await self?.refreshRecordingCard(canStart: true)
                 await self?.refreshToday()
@@ -521,6 +539,28 @@ final class AppModel {
         scoredNightCount = (try? await sink.baselineNightCount()) ?? scoredNightCount
         publishMorning(night: latest, baselineNights: scoredNightCount)
     }
+
+    /// The nights already scored and the baseline count, straight from the store without rescoring.
+    func loadStoredNights() async {
+        let today = Calendar.current.startOfDay(for: .now)
+        let monthAgo = Calendar.current.date(byAdding: .day, value: -Trends.longestRange, to: today) ?? today
+        if nights.isEmpty, let stored = try? await sink.nights(
+            from: DayScorer.dayKey(dayStart: Int(monthAgo.timeIntervalSince1970)),
+            to: DayScorer.dayKey(dayStart: Int(today.timeIntervalSince1970))) {
+            nights = stored
+        }
+        if scoredNightCount == 0, let count = try? await sink.baselineNightCount() { scoredNightCount = count }
+        // When the scorer changes, every night since pairing is scored again once, oldest first.
+        if UserDefaults.standard.integer(forKey: Self.scorerVersionKey) < Self.scorerVersion,
+           let pairedAt = collector.pairedAt {
+            collector.requestRescore(from: pairedAt)
+            UserDefaults.standard.set(Self.scorerVersion, forKey: Self.scorerVersionKey)
+        }
+    }
+
+    /// Bumped when night finding or scoring changes. 2: nights found from stillness where the strap has motion.
+    private static let scorerVersion = 2
+    private static let scorerVersionKey = "tether.scorer.version"
 
     /// A history sync filled in minutes the phone missed: rescore the nights and today with them.
     private func historyArrived(_ outcome: StrapHistoryOutcome) async {

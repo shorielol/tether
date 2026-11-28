@@ -92,10 +92,14 @@ struct ScoreStrip: View {
         }
     }
 
+    /// "11:50 PM – 6:35 AM", led by the weekday when the night shown didn't end today, so an older
+    /// night never passes for last night.
     private var sleepWindow: String? {
         guard let start = night?.sleepStart, let end = night?.sleepEnd else { return nil }
         let format = Date.FormatStyle(date: .omitted, time: .shortened)
-        return "\(Date(timeIntervalSince1970: TimeInterval(start)).formatted(format)) – \(Date(timeIntervalSince1970: TimeInterval(end)).formatted(format))"
+        let endDate = Date(timeIntervalSince1970: TimeInterval(end))
+        let window = "\(Date(timeIntervalSince1970: TimeInterval(start)).formatted(format)) – \(endDate.formatted(format))"
+        return Calendar.current.isDateInToday(endDate) ? window : "\(endDate.formatted(.dateTime.weekday(.wide))) · \(window)"
     }
 
     /// "6:36" for six hours thirty-six minutes.

@@ -21,6 +21,7 @@ struct ChargeOrb: View {
     /// How far round the ring goes: the Charge value, or the share of learning nights done.
     private var fraction: Double {
         if let charge { return min(max(charge / 100, 0), 1) }
+        if progress.isChargeReady { return 0 }
         return Double(learned) / Double(BaselineProgress.chargeNights)
     }
 
@@ -96,6 +97,14 @@ struct ChargeOrb: View {
                     .font(.caption.weight(.semibold)).textCase(.uppercase).tracking(1.2)
                     .foregroundStyle(tint)
             }
+        } else if progress.isChargeReady {
+            VStack(spacing: 4) {
+                Text("–").font(.system(size: 64, weight: .semibold, design: .rounded))
+                    .foregroundStyle(TetherBrand.sub)
+                Text("No sleep found").font(.footnote).foregroundStyle(TetherBrand.sub)
+                Text("Charge").font(.caption.weight(.semibold)).textCase(.uppercase).tracking(1.2)
+                    .foregroundStyle(TetherBrand.dusk)
+            }
         } else {
             VStack(spacing: 4) {
                 Text("Learning").font(.title2.weight(.semibold))
@@ -109,6 +118,7 @@ struct ChargeOrb: View {
 
     private var accessibility: String {
         guard let charge, let zone else {
+            if progress.isChargeReady { return "No Charge today: no sleep found last night" }
             return "Charge is learning, \(learned) of \(BaselineProgress.chargeNights) nights"
         }
         return "Charge \(Int(charge.rounded())) percent, \(zone.name)"

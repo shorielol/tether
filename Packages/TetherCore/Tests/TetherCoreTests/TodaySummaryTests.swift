@@ -95,6 +95,19 @@ struct DayLineTests {
     }
 }
 
+@Suite("A morning with no night found")
+struct NoNightLineTests {
+    @Test func afterLearningAMissingNightIsSaidPlainly() {
+        let line = DayLine.sentence(zone: nil, nightsUntilCharge: 0, sleptMinutes: nil, sleepBand: nil, effort: 20)
+        #expect(line == "No sleep found last night, so there's no Charge today.")
+    }
+
+    @Test func beforeAnyNightTheFirstNightIsAskedFor() {
+        let line = DayLine.sentence(zone: nil, nightsUntilCharge: 4, sleptMinutes: nil, sleepBand: nil, effort: nil)
+        #expect(line == "Wear the strap tonight. Your first night shows here in the morning.")
+    }
+}
+
 @Suite("Why Charge is where it is")
 struct RecoveryNoteTests {
     private func measure(_ name: String, _ value: Double, band: NormalBand?, higherIsBetter: Bool?) -> RecoveryDetail.Measure {

@@ -211,3 +211,27 @@ struct MarksTests {
         #expect(window.after == 71)
     }
 }
+
+@Suite("Names with no tap behind them")
+struct OrphanLabelTests {
+    private func store() -> MarkLabels {
+        MarkLabels(defaults: UserDefaults(suiteName: "orphans-\(UUID().uuidString)")!)
+    }
+
+    @Test func aNameWithNoTapInTheRangeIsRemoved() {
+        let labels = store()
+        labels.set("Coffee", for: 1_000)   // a real tap
+        labels.set("Coffee", for: 2_000)   // no tap: left by a screenshot fixture
+        let removed = labels.removeOrphans(taps: [1_000], in: 500...5_000)
+        #expect(removed == 1)
+        #expect(labels.label(for: 1_000) == "Coffee")
+        #expect(labels.label(for: 2_000) == nil)
+    }
+
+    @Test func namesOutsideTheLoadedRangeAreLeftAlone() {
+        let labels = store()
+        labels.set("Bus", for: 100)
+        #expect(labels.removeOrphans(taps: [], in: 500...5_000) == 0)
+        #expect(labels.label(for: 100) == "Bus")
+    }
+}
