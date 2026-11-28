@@ -55,7 +55,7 @@ struct ScoreStrip: View {
         let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
                                                   : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
         VStack(spacing: 18) {
-            DetailLink(.recovery, source: "recovery-orb") { ChargeOrb(charge: charge, band: chargeBand, progress: progress) }
+            DetailLink(.recovery, source: "recovery-orb", cornerRadius: nil) { ChargeOrb(charge: charge, band: chargeBand, progress: progress) }
             layout {
                 DetailLink(.sleep, source: "sleep-score") { sleepColumn.card(padding: 16) }
                 DetailLink(.effort, source: "effort-score") { effortColumn.card(padding: 16) }

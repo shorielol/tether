@@ -137,13 +137,16 @@ struct TodayView: View {
 struct DetailLink<Label: View>: View {
     let detail: TodayDetail
     let source: String
+    /// The card's corner radius for the zoom, or nil to leave the source unclipped (the orb's glow).
+    let cornerRadius: CGFloat?
     @ViewBuilder var label: Label
     @Environment(\.openDetail) private var openDetail
     @Environment(\.detailZoom) private var zoom
 
-    init(_ detail: TodayDetail, source: String? = nil, @ViewBuilder label: () -> Label) {
+    init(_ detail: TodayDetail, source: String? = nil, cornerRadius: CGFloat? = 24, @ViewBuilder label: () -> Label) {
         self.detail = detail
         self.source = source ?? detail.rawValue
+        self.cornerRadius = cornerRadius
         self.label = label()
     }
 
@@ -151,8 +154,12 @@ struct DetailLink<Label: View>: View {
         Group {
             if let openDetail, let zoom {
                 Button { openDetail(detail, source) } label: {
-                    label.environment(\.opensDetail, true)
-                        .matchedTransitionSource(id: source, in: zoom) { $0.clipShape(.rect(cornerRadius: 24)) }
+                    if let cornerRadius {
+                        label.environment(\.opensDetail, true)
+                            .matchedTransitionSource(id: source, in: zoom) { $0.clipShape(.rect(cornerRadius: cornerRadius)) }
+                    } else {
+                        label.environment(\.opensDetail, true).matchedTransitionSource(id: source, in: zoom)
+                    }
                 }
             } else {
                 NavigationLink(value: detail) { label.environment(\.opensDetail, true) }
