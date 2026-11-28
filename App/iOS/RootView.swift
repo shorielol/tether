@@ -1,4 +1,5 @@
 import SwiftUI
+import TetherCore
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -78,7 +79,11 @@ struct MainTabs: View {
 
 /// Shared scroll container so every tab has the same margins and background.
 struct TabScreen<Content: View>: View {
+    @Environment(AppModel.self) private var model
     @ViewBuilder var content: Content
+
+    /// The backdrop follows the Charge shown on Today.
+    private var zone: ChargeZone? { (model.latestNight ?? model.lastNight)?.charge.map(ChargeZone.init(charge:)) }
 
     var body: some View {
         ScrollView {
@@ -92,6 +97,7 @@ struct TabScreen<Content: View>: View {
         // Screenshot runs pass `-tether.debugAnchor bottom` to open a tab scrolled to the end.
         .defaultScrollAnchor(UserDefaults.standard.string(forKey: "tether.debugAnchor") == "bottom" ? .bottom : .top)
         #endif
-        .background(TetherBrand.ink)
+        .background { AuroraBackdrop(zone: zone) }
+        .motionGate()
     }
 }

@@ -52,38 +52,13 @@ struct ScoreStrip: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 18))
-                                                  : AnyLayout(HStackLayout(alignment: .top, spacing: 14))
-        layout {
-            DetailLink(.recovery) { chargeColumn }
-            DetailLink(.sleep) { sleepColumn }
-            DetailLink(.effort) { effortColumn }
-        }
-    }
-
-    @ViewBuilder private var chargeColumn: some View {
-        if let charge {
-            let zone = ChargeZone(charge: charge)
-            let rounded = Int(charge.rounded())
-            ScoreColumn(label: "Charge", caption: zone.name, accessibility: "Charge \(rounded) percent, \(zone.name)") {
-                Text("\(Text("\(rounded)"))\(Text("%").font(.title2.weight(.semibold)))")
-                    .foregroundStyle(TetherBrand.charge(zone))
-            } bar: {
-                RangeBar(placement: RangePlacement(value: charge, band: chargeBand, domain: 0...100),
-                         tint: TetherBrand.charge(zone))
-            }
-        } else {
-            let done = min(progress.scoredNights, BaselineProgress.chargeNights)
-            ScoreColumn(label: "Charge", caption: "\(done) of \(BaselineProgress.chargeNights) nights",
-                        accessibility: "Charge is learning, \(done) of \(BaselineProgress.chargeNights) nights") {
-                Text("Learning").font(.title3.bold()).foregroundStyle(TetherBrand.sub)
-            } bar: {
-                HStack(spacing: 3) {
-                    ForEach(0..<BaselineProgress.chargeNights, id: \.self) { index in
-                        Capsule().fill(index < done ? TetherBrand.dusk : TetherBrand.track).frame(height: 6)
-                    }
-                }
-                .frame(height: 12)
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                                                  : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        VStack(spacing: 18) {
+            DetailLink(.recovery) { ChargeOrb(charge: charge, band: chargeBand, progress: progress) }
+            layout {
+                DetailLink(.sleep) { sleepColumn.card(padding: 16) }
+                DetailLink(.effort) { effortColumn.card(padding: 16) }
             }
         }
     }
@@ -141,7 +116,7 @@ private struct ScoreColumn<Value: View, Bar: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(text: label)
             value
-                .font(.system(.largeTitle, weight: .bold)).monospacedDigit()
+                .font(.system(.title, design: .rounded, weight: .semibold)).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.6)
             bar
             Text(caption).font(.footnote).foregroundStyle(TetherBrand.sub)
@@ -167,6 +142,8 @@ struct TodayRibbon: View {
     var beat: Int?
     /// Moments marked by double-tapping the strap, drawn as pins.
     var marks: [Int] = []
+
+    @State private var drawn = false
 
     private var dayStart: Int {
         Int(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(today.window.lowerBound))).timeIntervalSince1970)
@@ -198,11 +175,16 @@ struct TodayRibbon: View {
                 DetailChevron()
             }
             chart
-                .frame(height: 96)
-                .padding(.vertical, 6)
-                .background(TetherBrand.cardFill, in: .rect(cornerRadius: 14))
+                .frame(height: 104)
+                .padding(.vertical, 4)
+                .mask(alignment: .leading) {
+                    GeometryReader { geo in
+                        Rectangle().frame(width: drawn ? geo.size.width : 0)
+                    }
+                }
         }
-        .contentShape(.rect)
+        .card(padding: 16)
+        .entrance($drawn, Motion.draw, delay: 0.3)
     }
 
     private var chart: some View {
@@ -212,12 +194,12 @@ struct TodayRibbon: View {
             if let sleep = clamped(sleep) {
                 RectangleMark(xStart: .value("Asleep from", date(sleep.lowerBound)),
                               xEnd: .value("Asleep to", date(sleep.upperBound)))
-                    .foregroundStyle(TetherBrand.dusk.opacity(0.16))
+                    .foregroundStyle(TetherBrand.dusk.opacity(0.18))
             }
             ForEach(today.minuteSeries) { point in
                 LineMark(x: .value("Time", date(point.ts)), y: .value("Heart rate", point.bpm),
                          series: .value("Stretch", point.segment))
-                    .foregroundStyle(Color(white: 0.8))
+                    .foregroundStyle(Color(white: 0.88))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
             }
             ForEach(zoneRuns, id: \.start) { run in
@@ -299,7 +281,7 @@ struct StrapChip: View {
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 44)
-            .background(Color.white.opacity(0.05), in: .capsule)
+            .background(TetherBrand.cardFill, in: .capsule)
             .overlay(Capsule().strokeBorder(TetherBrand.cardStroke))
             .contentShape(.capsule)
         }

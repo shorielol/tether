@@ -71,8 +71,7 @@ struct Tile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(TetherBrand.cardFill, in: .rect(cornerRadius: 18))
-        .contentShape(.rect(cornerRadius: 18))
+        .glass(cornerRadius: 20)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label), \(value ?? "not yet")")
     }
@@ -100,7 +99,7 @@ struct AskButton: View {
             Image(systemName: "sparkles")
                 .font(.body.weight(.semibold))
                 .frame(width: 44, height: 44)
-                .background(Color.white.opacity(0.05), in: .circle)
+                .background(TetherBrand.cardFill, in: .circle)
                 .overlay(Circle().strokeBorder(TetherBrand.cardStroke))
         }
         .buttonStyle(.plain)

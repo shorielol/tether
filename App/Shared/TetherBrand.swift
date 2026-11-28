@@ -10,10 +10,11 @@ enum TetherBrand {
     static let dusk = Color(red: 140 / 255, green: 155 / 255, blue: 1)
     static let deep = Color(red: 79 / 255, green: 91 / 255, blue: 208 / 255)
     static let bone = Color(red: 233 / 255, green: 225 / 255, blue: 207 / 255)
+    static let navy = Color(red: 27 / 255, green: 31 / 255, blue: 58 / 255)
     static let good = Color(red: 127 / 255, green: 214 / 255, blue: 168 / 255)
     static let headsUp = Color(red: 242 / 255, green: 184 / 255, blue: 75 / 255)
-    static let cardFill = Color.white.opacity(0.05)
-    static let cardStroke = Color.white.opacity(0.09)
+    static let cardFill = Color.white.opacity(0.06)
+    static let cardStroke = Color.white.opacity(0.12)
     static let track = Color.white.opacity(0.10)
     /// Text on an ember button. White on ember fails contrast; this dark brown passes.
     static let onEmber = Color(red: 26 / 255, green: 14 / 255, blue: 6 / 255)
@@ -67,7 +68,26 @@ struct PrimaryButton: View {
     }
 }
 
-/// Content cards are plain fills. Glass is kept for navigation and the primary buttons.
+/// Aurora glass: a faint white fill over the backdrop, with an edge that catches light at the top.
+/// No blur: the backdrop is already soft, and a material per card costs frames while scrolling.
+struct GlassPanel: ViewModifier {
+    var cornerRadius: CGFloat = 24
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background(TetherBrand.cardFill, in: shape)
+            .overlay(
+                shape.strokeBorder(
+                    LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom),
+                    lineWidth: 1)
+            )
+            .contentShape(shape)
+    }
+}
+
+/// Content cards are Aurora glass panels with the standard padding.
 struct CardStyle: ViewModifier {
     var padding: CGFloat = 18
 
@@ -75,13 +95,13 @@ struct CardStyle: ViewModifier {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(TetherBrand.cardFill, in: .rect(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(TetherBrand.cardStroke))
+            .modifier(GlassPanel())
     }
 }
 
 extension View {
     func card(padding: CGFloat = 18) -> some View { modifier(CardStyle(padding: padding)) }
+    func glass(cornerRadius: CGFloat = 24) -> some View { modifier(GlassPanel(cornerRadius: cornerRadius)) }
 }
 
 struct SectionLabel: View {

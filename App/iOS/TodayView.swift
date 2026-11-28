@@ -85,9 +85,10 @@ struct TodayView: View {
             ScoreStrip(charge: charge, chargeBand: Self.band(model.nights, before: chargeNight) { $0.charge },
                        progress: model.baseline, night: night, sleepBand: sleepBand, effort: model.today?.effort)
                 .padding(.top, 6)
-            Text(DayLine.sentence(zone: charge.map(ChargeZone.init(charge:)),
-                                  nightsUntilCharge: model.baseline.nightsUntilCharge,
-                                  sleptMinutes: night?.totalSleepMin, sleepBand: sleepBand, effort: model.today?.effort))
+            StreamedText(text: DayLine.sentence(zone: charge.map(ChargeZone.init(charge:)),
+                                                nightsUntilCharge: model.baseline.nightsUntilCharge,
+                                                sleptMinutes: night?.totalSleepMin, sleepBand: sleepBand,
+                                                effort: model.today?.effort))
                 .font(.title3.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, 4)
