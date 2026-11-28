@@ -96,3 +96,20 @@ struct WordStream: TextRenderer, Animatable {
         }
     }
 }
+
+/// Cards arriving one after another: each rises a little and fades in, `index` places it in the queue.
+struct StaggeredArrival: ViewModifier {
+    let index: Int
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 16)
+            .entrance($shown, Motion.reveal, delay: 0.08 + Double(index) * Motion.stagger)
+    }
+}
+
+extension View {
+    func staggered(_ index: Int) -> some View { modifier(StaggeredArrival(index: index)) }
+}
