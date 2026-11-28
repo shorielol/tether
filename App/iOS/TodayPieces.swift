@@ -55,10 +55,10 @@ struct ScoreStrip: View {
         let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
                                                   : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
         VStack(spacing: 18) {
-            DetailLink(.recovery) { ChargeOrb(charge: charge, band: chargeBand, progress: progress) }
+            DetailLink(.recovery, source: "recovery-orb") { ChargeOrb(charge: charge, band: chargeBand, progress: progress) }
             layout {
-                DetailLink(.sleep) { sleepColumn.card(padding: 16) }
-                DetailLink(.effort) { effortColumn.card(padding: 16) }
+                DetailLink(.sleep, source: "sleep-score") { sleepColumn.card(padding: 16) }
+                DetailLink(.effort, source: "effort-score") { effortColumn.card(padding: 16) }
             }
         }
     }
@@ -318,11 +318,13 @@ struct SyncLine: View {
     var body: some View {
         let collector = model.collector
         if collector.isSyncingHistory {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
+            HStack(spacing: 8) {
+                GooeyDots()
                 Text("Updating from your strap…")
             }
-            .font(.caption).foregroundStyle(TetherBrand.sub)
+            .font(.caption.weight(.medium)).foregroundStyle(TetherBrand.sub)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .glass(cornerRadius: 16)
             .accessibilityElement(children: .combine)
         } else if collector.isPaired, let last = collector.lastHistorySync {
             Text("Updated from your strap \(Self.when(last))")
@@ -334,5 +336,34 @@ struct SyncLine: View {
         let date = Date(timeIntervalSince1970: TimeInterval(ts))
         let time = date.formatted(date: .omitted, time: .shortened)
         return Calendar.current.isDateInToday(date) ? "at \(time)" : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    }
+}
+
+/// Three ember dots that drift together and pull apart like drops of liquid, while the strap syncs.
+/// Still dots with calm motion.
+struct GooeyDots: View {
+    @Environment(\.calmMotion) private var calm
+
+    var body: some View {
+        TimelineView(.animation(paused: calm)) { context in
+            let time = calm ? 0 : context.date.timeIntervalSinceReferenceDate
+            Canvas { canvas, size in
+                canvas.addFilter(.alphaThreshold(min: 0.5, color: TetherBrand.ember))
+                canvas.addFilter(.blur(radius: 2.5))
+                canvas.drawLayer { layer in
+                    let middle = CGPoint(x: size.width / 2, y: size.height / 2)
+                    for index in 0..<3 {
+                        let phase = time * 2.4 + Double(index) * 2.1
+                        let x = middle.x + CGFloat(sin(phase)) * size.width * 0.32
+                        let radius: CGFloat = index == 1 ? 3.6 : 3
+                        layer.fill(Path(ellipseIn: CGRect(x: x - radius, y: middle.y - radius,
+                                                          width: radius * 2, height: radius * 2)),
+                                   with: .color(.black))
+                    }
+                }
+            }
+        }
+        .frame(width: 26, height: 12)
+        .accessibilityHidden(true)
     }
 }

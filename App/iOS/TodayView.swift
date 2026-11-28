@@ -14,13 +14,22 @@ struct TodayView: View {
     @State private var showingCheckUp = false
     /// The day the check up last popped up on its own, so it does that once a morning.
     @AppStorage("tether.checkUp.offeredDay") private var offeredDay = ""
+    /// Detail screens zoom out of the card that opened them.
+    @Namespace private var zoom
+    @State private var zoomSource = ""
 
     var body: some View {
         NavigationStack(path: $path) {
             content
+                .environment(\.detailZoom, zoom)
+                .environment(\.openDetail) { detail, source in
+                    zoomSource = source
+                    path.append(detail)
+                }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: TodayDetail.self) { detail in
                     destination(detail)
+                        .navigationTransition(.zoom(sourceID: zoomSource, in: zoom))
                         .background(TetherBrand.ink)
                         .toolbarBackground(TetherBrand.ink, for: .navigationBar)
                 }
@@ -99,7 +108,7 @@ struct TodayView: View {
                 .buttonStyle(.bordered).tint(TetherBrand.ember)
             }
             if let today = model.today, !today.isEmpty {
-                DetailLink(.effort) {
+                DetailLink(.effort, source: "effort-ribbon") {
                     TodayRibbon(today: today, sleep: Self.sleepSpan(night), now: Int(Date.now.timeIntervalSince1970),
                                 live: model.liveHeartRate, beat: model.collector.lastSampleAt, marks: model.marksToday)
                 }
@@ -124,20 +133,39 @@ struct TodayView: View {
 }
 
 /// A Today card that opens a detail screen: the whole card is the tap target, and it shows a chevron.
+/// On Today the screen zooms out of the card; `source` tells apart two cards that open the same screen.
 struct DetailLink<Label: View>: View {
     let detail: TodayDetail
+    let source: String
     @ViewBuilder var label: Label
+    @Environment(\.openDetail) private var openDetail
+    @Environment(\.detailZoom) private var zoom
 
-    init(_ detail: TodayDetail, @ViewBuilder label: () -> Label) {
+    init(_ detail: TodayDetail, source: String? = nil, @ViewBuilder label: () -> Label) {
         self.detail = detail
+        self.source = source ?? detail.rawValue
         self.label = label()
     }
 
     var body: some View {
-        NavigationLink(value: detail) {
-            label.environment(\.opensDetail, true)
+        Group {
+            if let openDetail, let zoom {
+                Button { openDetail(detail, source) } label: {
+                    label.environment(\.opensDetail, true)
+                        .matchedTransitionSource(id: source, in: zoom) { $0.clipShape(.rect(cornerRadius: 24)) }
+                }
+            } else {
+                NavigationLink(value: detail) { label.environment(\.opensDetail, true) }
+            }
         }
         .buttonStyle(.plain)
         .accessibilityHint("Opens more detail")
     }
+}
+
+extension EnvironmentValues {
+    /// Today's zoom namespace, so a card can be the source its detail screen grows from.
+    @Entry var detailZoom: Namespace.ID?
+    /// Opens a detail screen from a card, remembering which card for the zoom.
+    @Entry var openDetail: ((TodayDetail, String) -> Void)?
 }
