@@ -123,7 +123,8 @@ public enum DayScorer {
         let sortedRR = rr.sorted { $0.ts < $1.ts }
         let sortedGravity = gravity.sorted { $0.ts < $1.ts }
         let fragments = SleepStager.hrOnlySessions(day: day, hr: sortedHR, rr: sortedRR, resp: [])
-        let joined = joiningTheNight(fragments, day: day, hr: sortedHR, rr: sortedRR, tzOffsetSeconds: tzOffsetSeconds)
+        let joined = joiningTheNight(fragments, day: day, hr: sortedHR, rr: sortedRR, gravity: sortedGravity,
+                                     tzOffsetSeconds: tzOffsetSeconds)
         let sleep = joined.map { withMotion($0, gravity: sortedGravity, hr: sortedHR, rr: sortedRR) }
         return AnalyticsEngine.analyzeDay(
             day: day, hr: sortedHR, rr: sortedRR,
@@ -139,12 +140,15 @@ public enum DayScorer {
     /// Swaps the fragments of one night for the whole night when `NightFinder` sees a longer span
     /// than any single fragment. The span is staged from heart rate and R-R like any other night, so
     /// wakes inside it still count as awake; resting HR and HRV are left for the engine to fill.
+    /// When motion covers the span, it came from stillness and wins even over a longer heart-rate
+    /// fragment, which would carry the night into a calm, awake morning.
     static func joiningTheNight(_ fragments: [SleepSession], day: String, hr: [HRSample], rr: [RRInterval],
-                                tzOffsetSeconds: Int) -> [SleepSession] {
+                                gravity: [GravitySample] = [], tzOffsetSeconds: Int) -> [SleepSession] {
         guard let dayStart = dayStart(day, tzOffsetSeconds: tzOffsetSeconds),
-              let span = NightFinder.night(hr: hr, dayStart: dayStart) else { return fragments }
+              let span = NightFinder.night(hr: hr, gravity: gravity, dayStart: dayStart) else { return fragments }
         let longest = fragments.map { $0.end - $0.start }.max() ?? 0
-        guard span.upperBound - span.lowerBound > longest else { return fragments }
+        let fromMotion = coveredByMotion(span, gravity: gravity)
+        guard fromMotion || span.upperBound - span.lowerBound > longest else { return fragments }
         let stages = SleepStagerV2.stageSession(start: span.lowerBound, end: span.upperBound, grav: [],
                                                 hr: hr, rr: rr, resp: [])
         guard !stages.isEmpty else { return fragments }
@@ -155,6 +159,14 @@ public enum DayScorer {
                                  restingHR: nil, avgHRV: nil, hrOnly: true)
         let others = fragments.filter { $0.end <= span.lowerBound || $0.start >= span.upperBound }
         return others + [night]
+    }
+
+    /// Whether the strap's motion covers most of a span, the same share `withMotion` asks for.
+    static func coveredByMotion(_ span: ClosedRange<Int>, gravity: [GravitySample]) -> Bool {
+        let inBed = span.upperBound - span.lowerBound
+        guard inBed > 0 else { return false }
+        let covered = gravity.lazy.filter { $0.ts >= span.lowerBound && $0.ts < span.upperBound }.count
+        return Double(covered) >= Double(inBed) * motionCoverageNeeded
     }
 
     /// A night needs motion for at least this share of it before its stages are redrawn with motion.

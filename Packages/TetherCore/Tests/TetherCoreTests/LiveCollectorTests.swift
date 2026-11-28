@@ -170,3 +170,16 @@ struct LiveCollectorTests {
         #expect(await sink.written.flatMap(\.hr).map(\.bpm) == [70])
     }
 }
+
+@MainActor
+@Suite("Asking for every night to be scored again")
+struct RescoreRequestTests {
+    @Test func aRequestMarksTheDaysAndSurvivesARelaunch() {
+        let defaults = UserDefaults(suiteName: "rescore-\(UUID().uuidString)")!
+        let collector = LiveCollector(source: FakeSource(), sink: FakeSink(), defaults: defaults, now: { 5_000 })
+        collector.requestRescore(from: 1_000)
+        #expect(collector.historyRescoreFrom == 1_000)
+        let relaunched = LiveCollector(source: FakeSource(), sink: FakeSink(), defaults: defaults, now: { 5_000 })
+        #expect(relaunched.historyRescoreFrom == 1_000)
+    }
+}

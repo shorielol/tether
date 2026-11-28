@@ -207,6 +207,10 @@ public final class LiveCollector {
         armHistoryIdle()
     }
 
+    /// Asks for every night from `from` on to be scored again, as if history had just filled them in.
+    /// Used once when the scorer itself changes. Kept until those nights have been rescored.
+    public func requestRescore(from: Int) { historyFilledIn(from: from) }
+
     private func historyFilledIn(from oldest: Int) {
         let from = min(historyRescoreFrom ?? oldest, oldest)
         historyRescoreFrom = from

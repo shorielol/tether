@@ -106,3 +106,90 @@ struct NightFinderTests {
         #expect(abs((night.sleepStart ?? 0) - LateNight.hour(3.67)) <= tolerance)
     }
 }
+
+/// Motion one reading a second: still keeps the wrist where it is, moving shifts it every second.
+enum Wrist {
+    static func samples(_ pieces: [(Double, Double, Bool)]) -> [GravitySample] {
+        pieces.flatMap { from, to, still in
+            stride(from: LateNight.hour(from), to: LateNight.hour(to), by: 1).map { ts in
+                let wobble = still ? 0.002 * sin(Double(ts)) : 0.2 * sin(Double(ts) * 1.7)
+                return GravitySample(ts: ts, x: 0.1 + wobble, y: 0.2, z: 0.9 - wobble, dynAccel: still ? 0.006 : 0.09)
+            }
+        }
+    }
+}
+
+@Suite("Finding the night from motion")
+struct NightFromMotionTests {
+    private let tolerance = 15 * 60
+    private let profile = UserProfile(age: 17, heightCm: 167, weightKg: 60, restingHR: nil, sex: .male)
+
+    /// After a hard evening the heart stays high for hours of real sleep. Lying still is the night.
+    private var hardEvening: (hr: [HRSample], gravity: [GravitySample]) {
+        let hr = LateNight.samples([(-8, -1, 135), (-1, 1.25, 108), (1.25, 4, 97), (4, 6, 86), (6, 10.6, 68),
+                                    (10.6, 12, 84)])
+        let gravity = Wrist.samples([(-8, 1.25, false), (1.25, 10.6, true), (10.6, 12, false)])
+        return (hr, gravity)
+    }
+
+    @Test func aStillNightWithAHighHeartIsStillANight() throws {
+        let (hr, gravity) = hardEvening
+        let span = try #require(NightFinder.night(hr: hr, gravity: gravity, dayStart: LateNight.dayStart))
+        #expect(abs(span.lowerBound - LateNight.hour(1.25)) <= tolerance)
+        #expect(abs(span.upperBound - LateNight.hour(10.6)) <= tolerance)
+    }
+
+    @Test func movingAgainEndsTheNightEvenWithACalmHeart() throws {
+        // Asleep 03:00–11:35, then up and about with a heart rate as low as the night's.
+        let hr = LateNight.samples([(-8, 3, 95), (3, 11.6, 58), (11.6, 14, 64), (14, 16, 95)])
+        let gravity = Wrist.samples([(-8, 3, false), (3, 11.6, true), (11.6, 16, false)])
+        let span = try #require(NightFinder.night(hr: hr, gravity: gravity, dayStart: LateNight.dayStart))
+        #expect(abs(span.lowerBound - LateNight.hour(3)) <= tolerance)
+        #expect(abs(span.upperBound - LateNight.hour(11.6)) <= tolerance)
+    }
+
+    @Test func stillWithAnExerciseHeartIsNotSleep() throws {
+        // A long still stretch at 150 bpm (a spin class, arms on the bars) next to a real night.
+        let hr = LateNight.samples([(-8, -4, 90), (-4, -1, 150), (-1, 0, 90), (0, 7, 58), (7, 9, 85)])
+        let gravity = Wrist.samples([(-8, -4, false), (-4, -1, true), (-1, 0, false), (0, 7, true), (7, 9, false)])
+        let span = try #require(NightFinder.night(hr: hr, gravity: gravity, dayStart: LateNight.dayStart))
+        #expect(abs(span.lowerBound - LateNight.hour(0)) <= tolerance)
+    }
+
+    @Test func aSteadyWristThatIsAcceleratingIsNotSleep() throws {
+        // A three-hour night, then four hours in the afternoon with a fixed wrist angle and real
+        // acceleration (cycling, hands on the bars) at a heart rate under the still ceiling.
+        let busy = stride(from: LateNight.hour(12), to: LateNight.hour(16), by: 1).map { ts in
+            GravitySample(ts: ts, x: 0.1, y: 0.2, z: 0.9, dynAccel: 0.35)
+        }
+        let hr = LateNight.samples([(-8, 0, 100), (0, 3, 58), (3, 12, 95), (12, 16, 85), (16, 18, 100)])
+        let gravity = Wrist.samples([(-8, 0, false), (0, 3, true), (3, 12, false)]) + busy
+            + Wrist.samples([(16, 18, false)])
+        let span = try #require(NightFinder.night(hr: hr, gravity: gravity, dayStart: LateNight.dayStart))
+        #expect(abs(span.lowerBound - LateNight.hour(0)) <= tolerance)
+        #expect(abs(span.upperBound - LateNight.hour(3)) <= tolerance)
+    }
+
+    @Test func withoutMotionTheHeartStillFindsTheNight() throws {
+        let span = try #require(NightFinder.night(hr: LateNight.samples(LateNight.pieces), gravity: [],
+                                                  dayStart: LateNight.dayStart))
+        #expect(abs(span.upperBound - LateNight.hour(10.33)) <= tolerance)
+    }
+
+    @Test func theScoreUsesTheStillNightAfterAHardEvening() {
+        let (hr, gravity) = hardEvening
+        let night = DayScorer.score(day: LateNight.day, hr: hr, rr: LateNight.beats(hr), gravity: gravity,
+                                    profile: profile, history: [], tzOffsetSeconds: 0)
+        #expect(abs((night.sleepStart ?? 0) - LateNight.hour(1.25)) <= tolerance)
+        #expect(abs((night.sleepEnd ?? 0) - LateNight.hour(10.6)) <= tolerance)
+        #expect((night.totalSleepMin ?? 0) >= 420)
+    }
+
+    @Test func theScoreEndsTheNightWhenTheWristMoves() {
+        let hr = LateNight.samples([(-8, 3, 95), (3, 11.6, 58), (11.6, 14, 64), (14, 16, 95)])
+        let gravity = Wrist.samples([(-8, 3, false), (3, 11.6, true), (11.6, 16, false)])
+        let night = DayScorer.score(day: LateNight.day, hr: hr, rr: LateNight.beats(hr), gravity: gravity,
+                                    profile: profile, history: [], tzOffsetSeconds: 0)
+        #expect(abs((night.sleepEnd ?? 0) - LateNight.hour(11.6)) <= tolerance)
+    }
+}
